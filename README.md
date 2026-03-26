@@ -1,2 +1,1 @@
-# case-mind
-AI-assisted KYC/AML decision system with structured reasoning, risk assessment, and error analysis.
+CaseMind — это система для анализа KYC-кейсов с использованием AI, которая помогает принимать обоснованные решения (CDD / EDD / Reject) и выявлять ошибки в логике анализа.
