@@ -20,6 +20,26 @@ def _render_list(items: list[str]) -> list[str]:
     return [f"- {item}" for item in items]
 
 
+def _render_self_review(output: dict) -> list[str]:
+    """Формирует блок ## Self-Review для вставки в любой режим ноты."""
+    lines = []
+    error_type = output.get("error_type", "—")
+    confidence_score = output.get("confidence_score", "—")
+    sr = output.get("self_review", {})
+
+    lines.append("## Self-Review")
+    lines.append(f"**Тип ошибки:** {error_type}  ")
+    lines.append(f"**Уверенность:** {confidence_score}/5")
+    lines.append("")
+    lines.append(f"**Краткая самооценка:** {sr.get('summary', '—')}")
+    lines.append(f"**Главный gap:** {sr.get('main_gap', '—')}")
+    lines.append("")
+    lines.append("**Что перепроверить:**")
+    lines.extend(_render_list(sr.get("what_to_recheck", [])))
+    lines.append("")
+    return lines
+
+
 def render_edd_note(output: dict) -> str:
     lines = []
 
@@ -57,6 +77,12 @@ def render_edd_note(output: dict) -> str:
     lines.append("## Analysis")
     lines.append(output.get("analysis", "—"))
     lines.append("")
+
+    lines.append("## Decisive Factor")
+    lines.append(output.get("decisive_factor", "—"))
+    lines.append("")
+
+    lines.extend(_render_self_review(output))
 
     lines.append("## Decision")
     lines.append(output.get("decision_rationale", "—"))
@@ -112,6 +138,12 @@ def render_reject_note(output: dict) -> str:
     lines.append(output.get("analysis", "—"))
     lines.append("")
 
+    lines.append("## Decisive Factor")
+    lines.append(output.get("decisive_factor", "—"))
+    lines.append("")
+
+    lines.extend(_render_self_review(output))
+
     lines.append("## Decision")
     lines.append(output.get("decision_rationale", "—"))
     lines.append("")
@@ -161,6 +193,12 @@ def render_approve_note(output: dict) -> str:
     lines.append("## Analysis")
     lines.append(output.get("analysis", "—"))
     lines.append("")
+
+    lines.append("## Decisive Factor")
+    lines.append(output.get("decisive_factor", "—"))
+    lines.append("")
+
+    lines.extend(_render_self_review(output))
 
     lines.append("## Decision")
     lines.append(output.get("decision_rationale", "—"))

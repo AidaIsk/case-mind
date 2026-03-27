@@ -11,9 +11,13 @@ REQUIRED_OUTPUT_KEYS = [
     "key_risk_factors",
     "cdd_assessment",
     "analysis",
+    "decisive_factor",
     "decision_rationale",
     "required_actions",
     "reject_reason_type",
+    "error_type",
+    "confidence_score",
+    "self_review",
 ]
 
 ALLOWED_DECISION_MODES = {"edd", "reject", "approve"}
@@ -27,6 +31,140 @@ ALLOWED_CDD_STATUS = {
 }
 ALLOWED_RISK_LEVELS = {"Низкий", "Средний", "Высокий"}
 ALLOWED_REJECT_REASON_TYPES = {"CDD_FAILURE", "RISK_UNACCEPTABLE", "NONE"}
+
+ALLOWED_ERROR_TYPES = {
+    "NONE",
+    "OVER_REJECT",
+    "UNDER_REJECT",
+    "MISSED_SIGNAL",
+    "WEAK_RATIONALE",
+    "CDD_LOGIC_GAP",
+    "INCONSISTENT_DECISION",
+}
+
+
+def _fallback_decisive_factor(mode: str) -> str:
+    """Возвращает осмысленный decisive_factor для fallback по режиму."""
+    if mode == "edd":
+        return "Недостаточно информации для завершения CDD на текущем этапе."
+    if mode == "reject":
+        return "Выявлен фактор, делающий риск или завершение CDD невозможным."
+    if mode == "approve":
+        return "Ключевые элементы CDD подтверждены, существенные blockers не выявлены."
+    return "Не удалось определить решающий фактор решения."
+
+
+def validate_decisive_factor_logic(output: dict) -> list[str]:
+    """
+    Проверяет смысловое соответствие decisive_factor режиму решения.
+    MVP-эвристики: не заменяют полноценный NLU, но ловят явные противоречия.
+    """
+    errors = []
+    mode = output.get("decision_mode")
+    reason = output.get("reject_reason_type", "NONE")
+    text = output.get("decisive_factor", "").lower()
+
+    if not text.strip():
+        return ["decisive_factor пуст — логическая проверка невозможна"]
+
+    # EDD: decisive_factor не должен говорить о невозможности CDD —
+    # это противоречит самой идее EDD (gaps закрываемы)
+    if mode == "edd":
+        forbidden = ["не может быть заверш", "невозможно завершить", "завершение невозможно"]
+        if any(phrase in text for phrase in forbidden):
+            errors.append(
+                "decisive_factor: EDD-кейс не может содержать формулировку о невозможности завершить CDD"
+            )
+
+    # Reject / CDD_FAILURE: decisive_factor должен указывать на конкретный CDD-blocker
+    if mode == "reject" and reason == "CDD_FAILURE":
+        blocker_signals = [
+            "не установлен", "не подтверждён", "не может быть", "невозможно",
+            "отсутствует", "ubo", "cdd", "бенефициар", "владелец", "идентификац",
+        ]
+        if not any(signal in text for signal in blocker_signals):
+            errors.append(
+                "decisive_factor: CDD_FAILURE требует указания конкретного CDD-блокера "
+                "(UBO, идентификация, документы)"
+            )
+
+    # Reject / RISK_UNACCEPTABLE: decisive_factor должен отражать risk finding
+    if mode == "reject" and reason == "RISK_UNACCEPTABLE":
+        risk_signals = [
+            "негатив", "риск", "adverse", "репутац", "публикац",
+            "схем", "вовлечённост", "не снят", "не устранён", "неприемлем",
+        ]
+        if not any(signal in text for signal in risk_signals):
+            errors.append(
+                "decisive_factor: RISK_UNACCEPTABLE требует отражения конкретного risk finding "
+                "(adverse media, репутационный риск, неустранённые findings)"
+            )
+
+    return errors
+
+
+def validate_self_review_logic(output: dict) -> list[str]:
+    """
+    Проверяет смысловое соответствие error_type, confidence_score и self_review
+    основному решению. MVP-эвристики — ловят явные противоречия.
+    """
+    errors = []
+    error_type = output.get("error_type", "")
+    confidence_score = output.get("confidence_score")
+    cdd_status = output.get("cdd_status", "")
+    decision_mode = output.get("decision_mode", "")
+    main_gap = output.get("self_review", {}).get("main_gap", "").lower()
+
+    # confidence_score = 5 несовместим с error_type != NONE
+    if confidence_score == 5 and error_type != "NONE":
+        errors.append(
+            "confidence_score = 5 недопустим при наличии error_type != NONE"
+        )
+
+    # confidence_score = 5 несовместим с незавершённым CDD
+    if confidence_score == 5 and cdd_status == "Incomplete":
+        errors.append(
+            "confidence_score = 5 недопустим при cdd_status = Incomplete"
+        )
+
+    # OVER_REJECT имеет смысл только при decision_mode = reject
+    if error_type == "OVER_REJECT" and decision_mode != "reject":
+        errors.append(
+            "error_type OVER_REJECT применим только при decision_mode = reject"
+        )
+
+    # UNDER_REJECT не должен ставиться при decision_mode = reject
+    # (решение уже reject — under-reject здесь бессмысленен)
+    if error_type == "UNDER_REJECT" and decision_mode == "reject":
+        errors.append(
+            "error_type UNDER_REJECT недопустим при decision_mode = reject "
+            "(решение уже отказ)"
+        )
+
+    # Если error_type = NONE, main_gap не должен описывать серьёзную проблему
+    if error_type == "NONE":
+        serious_signals = [
+            "критическ", "невозможн", "серьёзн", "grоss", "значительн",
+            "blocker", "не может быть", "недопустим",
+        ]
+        if any(sig in main_gap for sig in serious_signals):
+            errors.append(
+                "error_type = NONE, но self_review.main_gap содержит признаки "
+                "серьёзной аналитической проблемы"
+            )
+
+    # Если error_type != NONE, main_gap не должен быть пустым / формальным
+    if error_type != "NONE":
+        trivial_phrases = [
+            "существенных", "gaps не выявлено", "не выявлено", "отсутствует",
+        ]
+        if not main_gap.strip() or any(p in main_gap for p in trivial_phrases):
+            errors.append(
+                "error_type != NONE, но self_review.main_gap не описывает "
+                "конкретного gap"
+            )
+
+    return errors
 
 
 def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
@@ -72,6 +210,15 @@ def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
     if not isinstance(output["decision_rationale"], str):
         errors.append("decision_rationale must be a string")
 
+    if not isinstance(output["decisive_factor"], str):
+        errors.append("decisive_factor must be a string")
+    elif not output["decisive_factor"].strip():
+        errors.append("decisive_factor must not be empty")
+    else:
+        # Смысловая проверка: соответствие режиму решения
+        logic_errors = validate_decisive_factor_logic(output)
+        errors.extend(logic_errors)
+
     if not isinstance(output["key_risk_factors"], list):
         errors.append("key_risk_factors must be a list")
 
@@ -100,6 +247,45 @@ def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
 
     if len(output["required_actions"]) > 6:
         errors.append("required_actions must contain at most 6 items")
+
+    # --- error_type ---
+    if output["error_type"] not in ALLOWED_ERROR_TYPES:
+        errors.append(f"Invalid error_type: {output['error_type']}")
+
+    # --- confidence_score ---
+    cs = output["confidence_score"]
+    if not isinstance(cs, int):
+        errors.append("confidence_score must be an integer")
+    elif not (1 <= cs <= 5):
+        errors.append(f"confidence_score must be between 1 and 5, got {cs}")
+
+    # --- self_review ---
+    sr = output["self_review"]
+    if not isinstance(sr, dict):
+        errors.append("self_review must be an object")
+    else:
+        for subkey in ["summary", "main_gap", "what_to_recheck"]:
+            if subkey not in sr:
+                errors.append(f"Missing self_review.{subkey}")
+
+        if "summary" in sr and not isinstance(sr["summary"], str):
+            errors.append("self_review.summary must be a string")
+
+        if "main_gap" in sr and not isinstance(sr["main_gap"], str):
+            errors.append("self_review.main_gap must be a string")
+
+        if "what_to_recheck" in sr:
+            if not isinstance(sr["what_to_recheck"], list):
+                errors.append("self_review.what_to_recheck must be a list")
+            elif len(sr["what_to_recheck"]) > 3:
+                errors.append(
+                    "self_review.what_to_recheck must contain at most 3 items"
+                )
+
+    # --- Смысловая логика self_review (только если форма валидна) ---
+    if not errors:
+        logic_errors = validate_self_review_logic(output)
+        errors.extend(logic_errors)
 
     return len(errors) == 0, errors
 
@@ -142,7 +328,23 @@ def build_fallback_output(case_data: dict, error_message: str) -> dict:
             "conclusion": f"Требуется ручная валидация structured output. Ошибка: {error_message}",
         },
         "analysis": "LLM output не прошёл валидацию структуры, поэтому note требует ручной проверки.",
+        "decisive_factor": _fallback_decisive_factor(decision_mode),
         "decision_rationale": "Использован технический fallback до исправления structured output.",
         "required_actions": ["Проверить prompt, JSON output и валидацию структуры."],
         "reject_reason_type": reject_reason_type,
+        "error_type": "WEAK_RATIONALE",
+        "confidence_score": 2,
+        "self_review": {
+            "summary": (
+                "Структурированный self-review не был корректно сгенерирован. "
+                "Требуется ручная проверка reasoning."
+            ),
+            "main_gap": (
+                "Качество обоснования не может быть надёжно оценено в fallback-режиме."
+            ),
+            "what_to_recheck": [
+                "Проверить соответствие decision статусу CDD",
+                "Проверить decisive_factor и decision_rationale",
+            ],
+        },
     }

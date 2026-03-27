@@ -4,6 +4,8 @@ from llm import generate_structured_decision_output
 from renderers import render_decision_note
 from validators import validate_case
 from helpers import get_rejection_reasons, get_required_actions, build_case_timeline
+from schemas import build_case_data
+from storage import save_case_record, load_cases, get_case
 
 
 def process_case(case_data: dict) -> dict:
@@ -39,3 +41,36 @@ def process_case(case_data: dict) -> dict:
         "required_actions": required_actions,
         "timeline": timeline,
     }
+
+
+def save_result(case_data: dict, result: dict) -> None:
+    """
+    Сохраняет результат process_case() в storage.
+    UI вызывает только эту функцию — не storage напрямую.
+    """
+    save_case_record(
+        case_data=case_data,
+        structured_output=result["structured_output"],
+        note=result["note"],
+        rejection_reasons=result["rejection_reasons"],
+        required_actions=result["required_actions"],
+        timeline=result["timeline"],
+    )
+
+
+def get_all_cases() -> list:
+    """Возвращает все сохранённые кейсы. UI-точка входа для списка."""
+    return load_cases()
+
+
+def get_case_by_id(case_id: str) -> dict | None:
+    """Возвращает кейс по ID. UI-точка входа для просмотра."""
+    return get_case(case_id)
+
+
+def build_case_input(*args, **kwargs) -> dict:
+    """
+    Обёртка над schemas.build_case_data.
+    UI не импортирует schemas напрямую.
+    """
+    return build_case_data(*args, **kwargs)

@@ -30,6 +30,14 @@ def save_cases(cases: list) -> None:
         json.dump(cases, f, ensure_ascii=False, indent=2)
 
 
+def get_case(case_id: str) -> dict | None:
+    """Возвращает запись по case_id или None если не найдена."""
+    for record in load_cases():
+        if record.get("case_data", {}).get("case_id", "") == case_id:
+            return record
+    return None
+
+
 def save_case_record(
     case_data: dict,
     structured_output: dict,
@@ -40,14 +48,24 @@ def save_case_record(
 ) -> None:
     cases = load_cases()
 
+    so = structured_output or {}
+
     record = {
-        "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "case_data": case_data,
+        "saved_at":        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        # --- быстрые поля верхнего уровня для списка и аналитики ---
+        "case_id":         case_data.get("case_id", ""),
+        "decision":        so.get("decision") or case_data.get("recommendation", "—"),
+        "risk_level":      so.get("risk_level") or case_data.get("selected_risk_level", "—"),
+        "decisive_factor": so.get("decisive_factor", "—"),
+        "error_type":      so.get("error_type", "—"),
+        "confidence_score": so.get("confidence_score", 0),
+        # --- полные данные ---
+        "case_data":         case_data,
         "structured_output": structured_output,
-        "decision_note": note,
+        "decision_note":     note,
         "rejection_reasons": rejection_reasons,
-        "required_actions": required_actions,
-        "timeline": timeline,
+        "required_actions":  required_actions,
+        "timeline":          timeline,
     }
 
     case_id = case_data.get("case_id", "").strip()

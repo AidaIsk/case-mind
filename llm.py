@@ -184,10 +184,20 @@ JSON SCHEMA:
     "conclusion": "string"
   }},
   "analysis": "string",
+  "decisive_factor": "string",
   "decision_rationale": "string",
   "required_actions": [
     "string"
-  ]
+  ],
+  "error_type": "NONE|OVER_REJECT|UNDER_REJECT|MISSED_SIGNAL|WEAK_RATIONALE|CDD_LOGIC_GAP|INCONSISTENT_DECISION",
+  "confidence_score": 1,
+  "self_review": {{
+    "summary": "string",
+    "main_gap": "string",
+    "what_to_recheck": [
+      "string"
+    ]
+  }}
 }}
 
 FIELD RULES:
@@ -228,6 +238,23 @@ analysis:
 - второе предложение (если нужно): почему именно это решение, а не другое
 - без теории и общих объяснений
 
+decisive_factor:
+- ОДНА краткая формулировка — максимум 1–2 предложения
+- это главный перевешивающий фактор решения, не пересказ всего analysis
+- не список, не перечисление нескольких factors
+- должен быть логически согласован с decision_mode, cdd_status, reject_reason_type и decision_rationale
+- допускает только whitelist-термины на английском: CDD, EDD, UBO, SoF, PEP, sanctions, adverse media, onboarding, screening
+
+Логика по режимам:
+  EDD: главный незакрытый gap, из-за которого кейс нельзя одобрить сейчас, но можно продолжить через EDD
+    Пример: "Источник средств по операции не подтверждён."
+  Reject / CDD_FAILURE: критический CDD-blocker, делающий завершение CDD невозможным
+    Пример: "Бенефициарный владелец не установлен и не может быть подтверждён."
+  Reject / RISK_UNACCEPTABLE: главный неприемлемый risk finding
+    Пример: "Негативные публикации о возможной вовлечённости в сомнительные посреднические схемы не были сняты."
+  Approve: главный подтверждающий фактор, позволяющий принять клиента
+    Пример: "Ключевые элементы CDD подтверждены, существенные blockers не выявлены."
+
 decision_rationale:
 - для Reject (RISK_UNACCEPTABLE): обязательно включи одну фразу — ключевой фактор отказа
   Формат: "Ключевым фактором отказа является [конкретное finding], указывающее на [конкретный риск]."
@@ -242,6 +269,45 @@ required_actions:
 - для EDD: конкретные следующие шаги
 - для Reject: procedural actions допустимы
 - для Approve: можно оставить пустой список, если дополнительных действий нет
+
+error_type:
+- Один главный тип аналитической ошибки reasoning, если она есть
+- Выбери строго одно значение из enum:
+  NONE              — существенная ошибка не выявлена
+  OVER_REJECT       — reject слишком жёсткий; gaps закрываемы через EDD; CDD не невозможен
+  UNDER_REJECT      — серьёзные blockers или risk findings игнорируются; reject логичнее
+  MISSED_SIGNAL     — важный red flag не отражён в analysis / decisive_factor / rationale
+  WEAK_RATIONALE    — вывод допустим, но обоснование слабое, расплывчатое, незащищаемое
+  CDD_LOGIC_GAP     — перепутаны "incomplete" и "impossible to complete"; нарушена граница EDD/Reject
+  INCONSISTENT_DECISION — поля решения внутренне противоречат друг другу
+
+Правила выбора:
+- NONE только если: решение логически согласовано, decisive_factor чёткий, rationale защищаемый
+- OVER_REJECT только при decision_mode = reject
+- UNDER_REJECT НЕЛЬЗЯ при decision_mode = reject (решение уже отказ)
+- При любом error_type != NONE → confidence_score НЕ МОЖЕТ быть 5
+
+confidence_score:
+- Целое число от 1 до 5 — уровень уверенности в качестве аналитического вывода
+- Это НЕ риск-скор клиента
+- Шкала:
+  1 — критичные gaps, слабый reasoning, внутренние противоречия
+  2 — низкая уверенность, нужны дополнительные подтверждения
+  3 — рабочая логика, но есть спорные места
+  4 — решение защищаемо, reasoning последовательный
+  5 — ключевые элементы подтверждены, логика устойчива
+- ЗАПРЕЩЕНО ставить 5 если:
+  - error_type != NONE
+  - cdd_status = "Incomplete"
+  - self_review.main_gap содержит указание на незакрытый существенный gap
+
+self_review:
+- summary: 1–2 предложения — краткая самооценка качества решения и его защищаемости
+- main_gap: один главный недостаток текущего reasoning
+  Если недостатков нет: "Существенных аналитических gaps не выявлено."
+  Если error_type != NONE: main_gap обязан содержать конкретный gap — пустое или формальное значение недопустимо
+- what_to_recheck: список 1–3 конкретных точек повторной проверки
+  Примеры: UBO, SoF, screening findings, consistency of rationale, соответствие decision статусу CDD
 
 СТИЛИСТИЧЕСКИЕ ПРАВИЛА (применяются ко всем строковым полям):
 
@@ -284,6 +350,20 @@ required_actions:
 5. ЗАПРЕТ ДЛЯ RISK_UNACCEPTABLE-КЕЙСОВ — если reject_reason_type = "RISK_UNACCEPTABLE":
    - НЕЛЬЗЯ писать "CDD не может быть завершён".
    - Правильно: "CDD формально завершён, однако риск не является приемлемым".
+
+6. DECISIVE_FACTOR — обязательная самопроверка:
+   - поле заполнено (не пустая строка)
+   - это одна мысль, а не перечисление нескольких факторов
+   - соответствует decision_mode: EDD → незакрытый gap, Reject/CDD_FAILURE → CDD blocker,
+     Reject/RISK_UNACCEPTABLE → неприемлемый risk finding, Approve → подтверждающий фактор
+
+7. SELF-REVIEW CONSISTENCY — проверь перед ответом:
+   - error_type != NONE → confidence_score не равен 5
+   - cdd_status = "Incomplete" → confidence_score не равен 5
+   - error_type = OVER_REJECT → decision_mode = "reject"
+   - error_type = UNDER_REJECT → decision_mode НЕ "reject"
+   - error_type != NONE → self_review.main_gap содержит конкретный gap, не пустую фразу
+   - error_type = NONE → self_review.main_gap не содержит слов "критическ", "невозможн", "blocker"
 
 INPUT CASE DATA:
 {json.dumps(case_data, ensure_ascii=False, indent=2)}
