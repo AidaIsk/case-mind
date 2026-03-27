@@ -40,13 +40,7 @@ def validate_case(case_data: dict) -> dict:
     high_risk_selected = risk_level == "Высокий"
     low_risk_selected = risk_level == "Низкий"
 
-    # 1. Одна системная blocking error по конфликту решения аналитика с system logic
-    if recommendation == "Одобрить" and system_decision != "Одобрить":
-        blocking_errors.append(
-            f"Положительное решение недопустимо. По логике системы кейс требует: {system_decision}."
-        )
-
-    # 2. Предметные blocking reasons
+    # 1. Предметные blocking errors (собираем первыми)
     if bo_missing:
         blocking_errors.append(
             "Не установлен бенефициарный владелец (UBO)."
@@ -81,6 +75,14 @@ def validate_case(case_data: dict) -> dict:
         blocking_errors.append(
             "При отсутствии подтверждающих документов уровень риска не может быть низким."
         )
+
+    # 2. Системная ошибка — добавляем только если предметные блокеры не объясняют
+    # конфликт с system_decision (чтобы не дублировать смысл)
+    if recommendation == "Одобрить" and system_decision != "Одобрить":
+        if not blocking_errors:
+            blocking_errors.append(
+                f"Положительное решение недопустимо. По логике системы кейс требует: {system_decision}."
+            )
 
     # 3. Warnings
     if red_flags and not key_risk_driver.strip():

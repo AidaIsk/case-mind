@@ -1,14 +1,16 @@
 import streamlit as st
 
-from llm import generate_decision_note, is_llm_available, generate_structured_decision_output
-from renderers import render_decision_note
-from validators import validate_case
-from helpers import get_rejection_reasons, get_required_actions, build_case_timeline
+from llm import is_llm_available
+from services import process_case
 from storage import save_case_record
 from schemas import build_case_data
 
 
 def render_new_case_tab():
+    # Сбрасываем выбранный из истории кейс при входе во вкладку "Новый кейс"
+    if "selected_case_record" in st.session_state:
+        del st.session_state["selected_case_record"]
+
     with st.form("case_form"):
         st.subheader("1. Общие сведения")
         case_id = st.text_input("ID кейса")
@@ -112,7 +114,10 @@ def render_new_case_tab():
         missing_info,
     )
 
-    validation = validate_case(case_data)
+    with st.spinner("Обрабатываю кейс..."):
+        result = process_case(case_data)
+
+    validation = result["validation"]
 
     st.subheader("Проверка кейса")
 
@@ -121,20 +126,17 @@ def render_new_case_tab():
         for w in validation["warnings"]:
             st.write(f"- {w}")
 
-    if validation["blocking_errors"]:
+    if not result["ok"]:
         st.error("Генерация заблокирована из-за логических ошибок:")
         for err in validation["blocking_errors"]:
             st.write(f"- {err}")
         return
 
-    with st.spinner("Генерирую Decision Note..."):
-        structured_output = generate_structured_decision_output(case_data)
-        note = render_decision_note(structured_output)
-        #note = generate_decision_note(case_data)
-
-    rejection_reasons = get_rejection_reasons(case_data)
-    required_actions = get_required_actions(case_data)
-    timeline = build_case_timeline(case_data)
+    structured_output = result["structured_output"]
+    note = result["note"]
+    rejection_reasons = result["rejection_reasons"]
+    required_actions = result["required_actions"]
+    timeline = result["timeline"]
 
     st.session_state["last_case_data"] = case_data
     st.session_state["last_structured_output"] = structured_output
@@ -143,9 +145,6 @@ def render_new_case_tab():
     st.session_state["last_rejection_reasons"] = rejection_reasons
     st.session_state["last_required_actions"] = required_actions
     st.session_state["last_case_timeline"] = timeline
-
-    if "selected_case_record" in st.session_state:
-        del st.session_state["selected_case_record"]
 
     save_case_record(
         case_data=case_data,

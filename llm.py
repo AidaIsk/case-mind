@@ -4,7 +4,13 @@ import os
 import json
 from openai import OpenAI
 
-from prompts import PROMPT_TEMPLATE
+from prompts import (
+    PROMPT_TEMPLATE,
+    LANGUAGE_POLICY,
+    DECISION_POLICY,
+    OUTPUT_STRUCTURE_POLICY,
+    STYLE_POLICY,
+)
 from output_schema import validate_output_structure, build_fallback_output
 
 api_key = os.getenv("OPENAI_API_KEY")
@@ -24,7 +30,11 @@ def generate_decision_note(case_data: dict) -> str:
         return "Ошибка: не найден OPENAI_API_KEY."
 
     prompt = PROMPT_TEMPLATE.format(
-        case_data=json.dumps(case_data, ensure_ascii=False, indent=2)
+        language_policy=LANGUAGE_POLICY,
+        decision_policy=DECISION_POLICY,
+        output_structure_policy=OUTPUT_STRUCTURE_POLICY,
+        style_policy=STYLE_POLICY,
+        case_data=json.dumps(case_data, ensure_ascii=False, indent=2),
     )
 
     try:
@@ -39,21 +49,39 @@ def generate_decision_note(case_data: dict) -> str:
 
 def get_structured_output_prompt(case_data: dict) -> str:
     return f"""
-Ты выступаешь как опытный AML/KYC-аналитик уровня Middle/Senior.
+{LANGUAGE_POLICY}
 
-Твоя задача — вернуть СТРОГО JSON object для Decision Note.
+{DECISION_POLICY}
 
-ОБЩИЕ ТРЕБОВАНИЯ:
+{OUTPUT_STRUCTURE_POLICY}
+
+{STYLE_POLICY}
+
+STRUCTURED OUTPUT MODE:
+
+Ты должен вернуть только один валидный JSON object.
+Не возвращай markdown.
+Не возвращай пояснения до или после JSON.
+Не возвращай никакой текст вне JSON.
+
+Дополнительные требования:
 1. Используй только факты из input.
 2. Не придумывай факты.
-3. Основной язык — русский.
-4. Английские термины допустимы только для общепринятых сокращений: CDD, EDD, UBO, SoF, PEP, sanctions, screening.
-5. Не возвращай markdown.
-6. Не возвращай пояснения до или после JSON.
-7. Верни только один валидный JSON object.
-8. key_risk_factors: максимум 5 пунктов.
-9. required_actions: максимум 6 пунктов.
-10. Стиль: краткий, формальный, decision-oriented.
+3. Все значения строковых полей должны быть на русском языке.
+4. Допустимые английские термины внутри строк:
+   - CDD
+   - EDD
+   - UBO
+   - SoF
+   - PEP
+   - sanctions
+   - adverse media
+   - onboarding
+   - screening
+5. Не используй полные предложения на английском языке.
+6. key_risk_factors: максимум 5 пунктов.
+7. required_actions: максимум 6 пунктов.
+8. Каждое поле должно быть заполнено по существу, без воды.
 
 ЛОГИКА РЕЖИМОВ:
 
@@ -65,14 +93,19 @@ def get_structured_output_prompt(case_data: dict) -> str:
 - cdd_status = "Incomplete"
 - reject_reason_type = "NONE"
 
-Допустимые формулировки:
-- CDD remains incomplete
-- identified gaps may be resolved through EDD
-- approve is not supported at this stage
-- reject would be premature on the current record
+Для этого режима:
+- CDD не завершён
+- недостающая информация может быть получена
+- кейс не может быть approved на текущем этапе
+- reject преждевременен, если gaps могут быть закрыты через EDD
+
+Разрешённые формулировки:
+- "CDD не завершён"
+- "Выявленные gaps могут быть закрыты через EDD"
+- "На текущем этапе отсутствуют достаточные основания для положительного решения"
 
 Запрещено:
-- писать "CDD cannot be completed"
+- писать, что "CDD не может быть завершён"
 
 2. Reject due to CDD failure
 Используй:
@@ -82,10 +115,15 @@ def get_structured_output_prompt(case_data: dict) -> str:
 - cdd_status = "Incomplete and cannot be completed"
 - reject_reason_type = "CDD_FAILURE"
 
-Допустимые формулировки:
-- CDD cannot be completed
-- critical deficiencies remain unresolved
-- EDD would not resolve the core deficiencies
+Для этого режима:
+- ключевые элементы CDD не подтверждены
+- завершение CDD невозможно
+- EDD не устранит core deficiencies
+
+Разрешённые формулировки:
+- "CDD не может быть завершён"
+- "Критические deficiencies остаются неустранёнными"
+- "EDD не устранит ключевые gaps"
 
 3. Reject due to unacceptable risk
 Используй:
@@ -95,14 +133,20 @@ def get_structured_output_prompt(case_data: dict) -> str:
 - cdd_status = "Complete but risk not acceptable"
 - reject_reason_type = "RISK_UNACCEPTABLE"
 
-Допустимые формулировки:
-- CDD is formally complete, but risk is not acceptable
-- the risk remains unmanageable on the available information
-- the adverse findings are not mitigated to an acceptable level
-- continued onboarding is not recommended
+Для этого режима:
+- базовые элементы CDD подтверждены
+- но риск остаётся неприемлемым
+- негативные findings не снижены до приемлемого уровня
+- продолжение onboarding не рекомендуется
+
+Разрешённые формулировки:
+- "CDD формально завершён, однако риск не является приемлемым"
+- "Риск остаётся неуправляемым на основании доступной информации"
+- "Выявленные adverse media / risk findings не снижены до приемлемого уровня"
+- "Продолжение onboarding не рекомендуется"
 
 Запрещено:
-- писать "CDD cannot be completed", если по input базовые элементы CDD подтверждены
+- писать, что "CDD не может быть завершён", если базовые элементы CDD подтверждены
 
 4. Approve case
 Используй:
@@ -112,7 +156,12 @@ def get_structured_output_prompt(case_data: dict) -> str:
 - cdd_status = "Complete"
 - reject_reason_type = "NONE"
 
-СТРУКТУРА JSON:
+Для этого режима:
+- базовые элементы CDD подтверждены
+- отсутствуют blockers для approval
+- риск находится в приемлемых пределах
+
+JSON SCHEMA:
 {{
   "decision_mode": "edd|reject|approve",
   "decision": "Эскалация|Отказать|Одобрить",
@@ -122,21 +171,123 @@ def get_structured_output_prompt(case_data: dict) -> str:
   "reject_reason_type": "CDD_FAILURE|RISK_UNACCEPTABLE|NONE",
   "decision_summary": "string",
   "case_overview": "string",
-  "key_risk_factors": ["string"],
+  "key_risk_factors": [
+    "string"
+  ],
   "cdd_assessment": {{
-    "confirmed": ["string"],
-    "not_confirmed": ["string"],
+    "confirmed": [
+      "string"
+    ],
+    "not_confirmed": [
+      "string"
+    ],
     "conclusion": "string"
   }},
   "analysis": "string",
   "decision_rationale": "string",
-  "required_actions": ["string"]
+  "required_actions": [
+    "string"
+  ]
 }}
+
+FIELD RULES:
+
+decision_summary:
+- 2–4 предложения
+- кратко фиксирует итог решения
+- без повторения всего кейса
+
+case_overview:
+- только сжатое factual summary кейса
+- без аналитических выводов
+
+key_risk_factors:
+- 3–5 пунктов
+- каждый пункт — это конкретный факт или наблюдение, не вывод
+- ЗАПРЕЩЕНО: "риск признан неуправляемым", "совокупность факторов делает риск неприемлемым" —
+  это выводы, они принадлежат analysis и decision_rationale
+- без дублей
+
+cdd_assessment.confirmed:
+- только то, что действительно подтверждено по input
+- не включай туда предположения
+
+cdd_assessment.not_confirmed:
+- только реально незакрытые gaps
+- не дублируй confirmed
+
+cdd_assessment.conclusion:
+- 1–2 предложения
+- должна быть согласована с cdd_status
+
+analysis:
+- 1 короткий аналитический абзац — максимум 2–3 предложения
+- первое предложение: синтез ключевых факторов в одну мысль (не перечисление через запятую)
+  Пример: "Совокупность adverse media и трансграничной посреднической модели формирует неуправляемый риск."
+  Не: "adverse media, высокий репутационный риск, трансграничный характер… в совокупности формируют…"
+- второе предложение (если нужно): почему именно это решение, а не другое
+- без теории и общих объяснений
+
+decision_rationale:
+- для Reject (RISK_UNACCEPTABLE): обязательно включи одну фразу — ключевой фактор отказа
+  Формат: "Ключевым фактором отказа является [конкретное finding], указывающее на [конкретный риск]."
+  Это делает решение защищаемым.
+- затем 1 предложение о невозможности принять клиента — без повтора "CDD формально завершён",
+  если это уже сказано в Summary или cdd_assessment.conclusion
+  Пример: "Поскольку риск не снижен до приемлемого уровня, клиент не может быть принят."
+- для Reject (CDD_FAILURE): прямой вывод о том, что завершение CDD невозможно
+- для EDD и Approve: прямой ответ на вопрос "можно ли принять клиента на текущем этапе?"
+
+required_actions:
+- для EDD: конкретные следующие шаги
+- для Reject: procedural actions допустимы
+- для Approve: можно оставить пустой список, если дополнительных действий нет
+
+СТИЛИСТИЧЕСКИЕ ПРАВИЛА (применяются ко всем строковым полям):
+
+Запрещённые механические обороты — замени на более естественные:
+- "Экономическое назначение отношений заявлено" → "Цель отношений заявлена"
+- "Экономическое назначение заявлено" → "Цель взаимодействия обозначена"
+- "приемлемость общего risk-профиля" → "приемлемость риск-профиля"
+- "PEP не установлен" → "PEP не выявлен"
+- "санкционные риски не установлены" → "совпадений по санкциям не выявлено"
+- "adverse media не установлено" / "adverse media отсутствует" →
+  пиши развёрнуто: "негативных публикаций не выявлено" или один раз "adverse media: совпадений нет"
+- не повторяй "adverse media" больше одного раза в одном тексте
+
+Общие принципы:
+- пиши как аналитик, а не как шаблонный генератор
+- избегай номинализаций ("установление факта наличия") — пиши просто ("факт подтверждён")
+- не начинай подряд несколько пунктов одним словом
+
+ФИНАЛЬНАЯ ПРОВЕРКА ПЕРЕД ОТВЕТОМ — ОБЯЗАТЕЛЬНО ВЫПОЛНИ КАЖДЫЙ ПУНКт:
+
+1. ФОРМАТ: верни только JSON, без markdown-обёртки, без пояснений до и после.
+
+2. ЯЗЫК — пройди по каждому строковому полю:
+   - Найди любое предложение (заканчивающееся на точку), написанное на английском языке.
+   - Если нашёл — ПЕРЕПИШИ его на русский.
+   - Допустимые английские слова внутри русских предложений: CDD, EDD, UBO, SoF, PEP, sanctions, adverse media, onboarding, screening.
+   - ЗАПРЕЩЕНЫ конструкции: "CDD is complete", "risk is not acceptable", "CDD cannot be completed", "not mitigated", "remains unmanageable", "continued onboarding is not recommended", "CDD remains incomplete" — любые полные клаузы на английском.
+
+3. ЛОГИКА РЕЖИМОВ — проверь соответствие:
+   - decision_mode = "edd" → cdd_status = "Incomplete", edd_required = "Да", reject_reason_type = "NONE"
+   - decision_mode = "reject" + reject_reason_type = "CDD_FAILURE" → cdd_status = "Incomplete and cannot be completed"
+   - decision_mode = "reject" + reject_reason_type = "RISK_UNACCEPTABLE" → cdd_status = "Complete but risk not acceptable"
+   - decision_mode = "approve" → cdd_status = "Complete", edd_required = "Нет", reject_reason_type = "NONE"
+
+4. ЗАПРЕТ ДЛЯ EDD-КЕЙСОВ — если decision_mode = "edd":
+   - НЕЛЬЗЯ писать "CDD не может быть завершён" или "завершение CDD невозможно" в любом поле.
+   - НЕЛЬЗЯ писать "EDD не устранит" в любом поле.
+   - Правильные формулировки: "CDD не завершён", "gaps могут быть закрыты через EDD".
+
+5. ЗАПРЕТ ДЛЯ RISK_UNACCEPTABLE-КЕЙСОВ — если reject_reason_type = "RISK_UNACCEPTABLE":
+   - НЕЛЬЗЯ писать "CDD не может быть завершён".
+   - Правильно: "CDD формально завершён, однако риск не является приемлемым".
 
 INPUT CASE DATA:
 {json.dumps(case_data, ensure_ascii=False, indent=2)}
 """.strip()
-
 
 def _extract_json_from_response(text: str) -> dict:
     """

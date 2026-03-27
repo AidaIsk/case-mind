@@ -1,5 +1,19 @@
 # renderers.py
 
+_CDD_STATUS_LABELS = {
+    "Complete": "CDD завершён",
+    "Incomplete": "CDD не завершён",
+    "Incomplete and cannot be completed": "CDD не может быть завершён",
+    "Complete but risk not acceptable": "CDD завершён, риск не является приемлемым",
+}
+
+_REJECT_REASON_LABELS = {
+    "CDD_FAILURE": "Невозможность завершить CDD",
+    "RISK_UNACCEPTABLE": "Неприемлемый риск",
+    "NONE": None,
+}
+
+
 def _render_list(items: list[str]) -> list[str]:
     if not items:
         return ["- —"]
@@ -10,8 +24,10 @@ def render_edd_note(output: dict) -> str:
     lines = []
 
     lines.append("## Decision Summary")
+    cdd_status_label = _CDD_STATUS_LABELS.get(output.get("cdd_status", ""), output.get("cdd_status", "—"))
+
     lines.append(f"**Решение:** {output.get('decision', '—')}  ")
-    lines.append(f"**Статус CDD:** {output.get('cdd_status', '—')}  ")
+    lines.append(f"**Статус CDD:** {cdd_status_label}  ")
     lines.append(f"**Уровень риска:** {output.get('risk_level', '—')}  ")
     lines.append(f"**EDD:** {output.get('edd_required', '—')}")
     lines.append("")
@@ -56,17 +72,17 @@ def render_reject_note(output: dict) -> str:
     lines = []
 
     reject_reason_type = output.get("reject_reason_type", "NONE")
+    cdd_status_label = _CDD_STATUS_LABELS.get(output.get("cdd_status", ""), output.get("cdd_status", "—"))
+    reject_label = _REJECT_REASON_LABELS.get(reject_reason_type)
 
     lines.append("## Decision Summary")
     lines.append(f"**Решение:** {output.get('decision', '—')}  ")
-    lines.append(f"**Статус CDD:** {output.get('cdd_status', '—')}  ")
+    lines.append(f"**Статус CDD:** {cdd_status_label}  ")
     lines.append(f"**Уровень риска:** {output.get('risk_level', '—')}  ")
     lines.append(f"**EDD:** {output.get('edd_required', '—')}  ")
 
-    if reject_reason_type == "CDD_FAILURE":
-        lines.append("**Тип отказа:** CDD failure")
-    elif reject_reason_type == "RISK_UNACCEPTABLE":
-        lines.append("**Тип отказа:** Risk not acceptable")
+    if reject_label:
+        lines.append(f"**Тип отказа:** {reject_label}")
 
     lines.append("")
     lines.append(output.get("decision_summary", "—"))
@@ -111,9 +127,11 @@ def render_reject_note(output: dict) -> str:
 def render_approve_note(output: dict) -> str:
     lines = []
 
+    cdd_status_label = _CDD_STATUS_LABELS.get(output.get("cdd_status", ""), output.get("cdd_status", "—"))
+
     lines.append("## Decision Summary")
     lines.append(f"**Решение:** {output.get('decision', '—')}  ")
-    lines.append(f"**Статус CDD:** {output.get('cdd_status', '—')}  ")
+    lines.append(f"**Статус CDD:** {cdd_status_label}  ")
     lines.append(f"**Уровень риска:** {output.get('risk_level', '—')}  ")
     lines.append(f"**EDD:** {output.get('edd_required', '—')}")
     lines.append("")
