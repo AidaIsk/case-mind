@@ -79,3 +79,47 @@ def get_case_decision_meta(case_data: dict) -> tuple:
 def check_llm() -> bool:
     """Проверяет доступность LLM. UI не импортирует llm напрямую."""
     return is_llm_available()
+
+
+# ---------------------------------------------------------------------------
+# Trainer Mode API
+# ---------------------------------------------------------------------------
+
+from trainer_cases import get_all_trainer_cases, get_trainer_case_by_id
+from trainer import evaluate_trainer_answer, save_trainer_run, load_trainer_runs
+
+
+def get_trainer_cases() -> list:
+    """Возвращает библиотеку тренировочных кейсов."""
+    return get_all_trainer_cases()
+
+
+def get_trainer_case(case_id: str) -> dict | None:
+    """Возвращает тренировочный кейс по ID."""
+    return get_trainer_case_by_id(case_id)
+
+
+def review_trainer_case(user_output: dict, expected_output: dict) -> dict:
+    """Сравнивает ответ аналитика с эталоном и возвращает review."""
+    return evaluate_trainer_answer(user_output, expected_output)
+
+
+def submit_trainer_run(
+    trainer_case_id: str,
+    user_output: dict,
+    expected_output: dict,
+) -> tuple[dict, str]:
+    """
+    Оркестрирует полный цикл тренировки:
+    evaluate → save → return (review, run_id).
+    UI вызывает только эту функцию.
+    """
+    review = evaluate_trainer_answer(user_output, expected_output)
+    run_id = save_trainer_run(trainer_case_id, user_output, expected_output, review)
+    return review, run_id
+
+
+def get_trainer_runs() -> list:
+    """Возвращает историю тренировочных прогонов."""
+    return load_trainer_runs()
+

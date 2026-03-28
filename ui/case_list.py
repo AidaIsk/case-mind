@@ -1,12 +1,12 @@
 import streamlit as st
 
-from storage import load_cases
+from services import get_all_cases
 
 
 def render_case_list_tab():
     st.header("Список кейсов")
 
-    cases = load_cases()
+    cases = get_all_cases()
 
     if not cases:
         st.info("Сохранённых кейсов пока нет.")
