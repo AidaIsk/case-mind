@@ -21,7 +21,7 @@ from prompts import (
     OUTPUT_STRUCTURE_POLICY,
     STYLE_POLICY,
 )
-from output_schema import validate_output_structure, build_fallback_output
+from core.output_schema import validate_output_structure, build_fallback_output
 
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key) if api_key else None

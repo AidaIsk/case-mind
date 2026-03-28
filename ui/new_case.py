@@ -1,10 +1,15 @@
+# ui/new_case.py
+# UI-слой. Импортирует только из services и llm (только is_llm_available).
+# Никакой бизнес-логики, никаких прямых обращений к storage/schemas/logic.
+
 import streamlit as st
 
-from services import process_case, save_result, build_case_input, check_llm
+from llm import is_llm_available
+from core.services import process_case, save_result, build_case_input
 
 
 def render_new_case_tab():
-    # Сбрасываем выбранный из истории кейс при входе во вкладку "Новый кейс"
+    # Сбрасываем выбранный из истории кейс при входе во вкладку
     if "selected_case_record" in st.session_state:
         del st.session_state["selected_case_record"]
 
@@ -71,44 +76,21 @@ def render_new_case_tab():
     if not submitted:
         return
 
-    if not check_llm():
+    if not is_llm_available():
         st.error("Не найден OPENAI_API_KEY. Добавь ключ в переменные окружения.")
         return
 
     case_data = build_case_input(
-        case_id,
-        case_type,
-        client_type,
-        client_name,
-        registration_country,
-        business_activity,
-        bo_identified,
-        bo_details,
-        ultimate_controller,
-        client_country,
-        counterparty_countries,
-        high_risk_geo,
-        source_of_funds,
-        transaction_amount,
-        transaction_description,
-        supporting_documents,
-        purpose_of_relationship,
-        product_or_service,
-        economic_rationale,
-        matches_profile,
-        sanctions_result,
-        pep_result,
-        adverse_media_result,
-        unresolved_issues,
-        red_flags,
-        mitigating_factors,
-        key_risk_driver,
-        risk_manageable,
-        risk_level,
-        recommendation,
-        edd_required,
-        decision_rationale,
-        missing_info,
+        case_id, case_type, client_type, client_name,
+        registration_country, business_activity,
+        bo_identified, bo_details, ultimate_controller,
+        client_country, counterparty_countries, high_risk_geo,
+        source_of_funds, transaction_amount, transaction_description,
+        supporting_documents, purpose_of_relationship, product_or_service,
+        economic_rationale, matches_profile,
+        sanctions_result, pep_result, adverse_media_result, unresolved_issues,
+        red_flags, mitigating_factors, key_risk_driver, risk_manageable,
+        risk_level, recommendation, edd_required, decision_rationale, missing_info,
     )
 
     with st.spinner("Обрабатываю кейс..."):
@@ -131,17 +113,13 @@ def render_new_case_tab():
 
     structured_output = result["structured_output"]
     note = result["note"]
-    rejection_reasons = result["rejection_reasons"]
-    required_actions = result["required_actions"]
-    timeline = result["timeline"]
 
     st.session_state["last_case_data"] = case_data
     st.session_state["last_structured_output"] = structured_output
-
     st.session_state["last_decision_note"] = note
-    st.session_state["last_rejection_reasons"] = rejection_reasons
-    st.session_state["last_required_actions"] = required_actions
-    st.session_state["last_case_timeline"] = timeline
+    st.session_state["last_rejection_reasons"] = result["rejection_reasons"]
+    st.session_state["last_required_actions"] = result["required_actions"]
+    st.session_state["last_case_timeline"] = result["timeline"]
 
     save_result(case_data, result)
 

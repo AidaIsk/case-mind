@@ -14,7 +14,9 @@ import uuid
 from datetime import datetime
 
 
-TRAINER_RUNS_FILE = os.path.join("data", "trainer_runs.json")
+# Путь к trainer_runs.json вычисляется относительно корня проекта.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TRAINER_RUNS_FILE = os.path.join(_PROJECT_ROOT, "data", "trainer_runs.json")
 
 # ---------------------------------------------------------------------------
 # Root Cause — классификация причин ошибок
@@ -369,7 +371,7 @@ def evaluate_trainer_answer(user_output: dict, expected_output: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _ensure_trainer_data_dir() -> None:
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.dirname(TRAINER_RUNS_FILE), exist_ok=True)
 
 
 def load_trainer_runs() -> list:

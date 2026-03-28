@@ -1,7 +1,7 @@
-# services.py
+# core/services.py
 
 from llm import generate_structured_decision_output, is_llm_available
-from renderers import render_decision_note
+from core.renderers import render_decision_note
 from validators import validate_case
 from helpers import get_rejection_reasons, get_required_actions, build_case_timeline
 from schemas import build_case_data
@@ -85,8 +85,8 @@ def check_llm() -> bool:
 # Trainer Mode API
 # ---------------------------------------------------------------------------
 
-from trainer_cases import get_all_trainer_cases, get_trainer_case_by_id
-from trainer import evaluate_trainer_answer, save_trainer_run, load_trainer_runs
+from trainer.trainer_cases import get_all_trainer_cases, get_trainer_case_by_id
+from trainer.trainer import evaluate_trainer_answer, save_trainer_run, load_trainer_runs
 
 
 def get_trainer_cases() -> list:

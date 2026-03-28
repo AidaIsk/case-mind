@@ -1,9 +1,6 @@
 # case_view.py
-# UI-слой. Импортирует только из services.
 
 import streamlit as st
-
-from services import get_case_decision_meta
 
 
 _RISK_BADGE = {
@@ -18,22 +15,20 @@ _DECISION_BADGE = {
     "Эскалация":  "⚠️",
 }
 
-_IMPACT_BADGE = {
-    "DECISIVE": "🔴",
-    "HIGH":     "🟠",
-    "MEDIUM":   "🟡",
-    "LOW":      "⚪",
+_ERROR_TYPE_LABELS = {
+    "NONE":                 "Ошибок не выявлено",
+    "OVER_REJECT":          "Избыточный reject",
+    "UNDER_REJECT":         "Занижение тяжести",
+    "MISSED_SIGNAL":        "Пропущен сигнал",
+    "WEAK_RATIONALE":       "Слабое обоснование",
+    "CDD_LOGIC_GAP":        "Нарушение логики CDD",
+    "INCONSISTENT_DECISION":"Внутреннее противоречие",
 }
 
-_ERROR_TYPE_LABELS = {
-    "NONE":                  "Ошибок не выявлено",
-    "OVER_REJECT":           "Избыточный reject",
-    "UNDER_REJECT":          "Занижение тяжести",
-    "MISSED_SIGNAL":         "Пропущен сигнал",
-    "WEAK_RATIONALE":        "Слабое обоснование",
-    "CDD_LOGIC_GAP":         "Нарушение логики CDD",
-    "INCONSISTENT_DECISION": "Внутреннее противоречие",
-}
+
+def _risk_badge(risk: str) -> str:
+    icon, _ = _RISK_BADGE.get(risk, ("⚪", "secondary"))
+    return f"{icon} {risk}"
 
 
 def _confidence_bar(score) -> str:
@@ -72,7 +67,7 @@ def render_case_view_tab():
         st.info("Кейс пуст.")
         return
 
-    # ── Блок 1: Профиль клиента ───────────────────────────────────────────
+    # Блок 1: Профиль клиента
     st.subheader("Профиль клиента")
     col1, col2 = st.columns(2)
     with col1:
@@ -87,10 +82,10 @@ def render_case_view_tab():
         st.write(f"**ID кейса:** `{case_data.get('case_id', '—')}`")
     st.divider()
 
-    # ── Блок 2: Решение ───────────────────────────────────────────────────
+    # Блок 2: Решение
     st.subheader("Решение")
-    risk       = so.get("risk_level") or case_data.get("selected_risk_level", "—")
-    decision   = so.get("decision")   or case_data.get("recommendation", "—")
+    risk      = so.get("risk_level") or case_data.get("selected_risk_level", "—")
+    decision  = so.get("decision")   or case_data.get("recommendation", "—")
     cdd_status = so.get("cdd_status", "—")
     edd        = so.get("edd_required") or case_data.get("edd_required", "—")
     risk_icon, _ = _RISK_BADGE.get(risk, ("⚪", "secondary"))
@@ -105,35 +100,14 @@ def render_case_view_tab():
     st.write(f"**Статус CDD:** {cdd_status}")
     st.divider()
 
-    # ── Блок 3: Signal Trace ──────────────────────────────────────────────
-    signal_trace = so.get("signal_trace", [])
-    if signal_trace:
-        st.subheader("Signal Trace")
-        for sig in signal_trace:
-            impact    = sig.get("impact", "—")
-            signal    = sig.get("signal", "—")
-            comment   = sig.get("comment", "").strip()
-            category  = sig.get("category", "")
-            direction = sig.get("direction", "")
-            icon = _IMPACT_BADGE.get(impact, "⚪")
-
-            col_i, col_s = st.columns([1, 9])
-            with col_i:
-                st.markdown(f"**{icon} {impact}**")
-            with col_s:
-                st.write(signal)
-                if comment:
-                    st.caption(f"{comment}  •  {category}  •  {direction}")
-        st.divider()
-
-    # ── Блок 4: Decisive Factor ───────────────────────────────────────────
+    # Блок 3: Decisive Factor
     decisive_factor = so.get("decisive_factor", "").strip()
     if decisive_factor and decisive_factor != "—":
         st.subheader("Ключевой фактор решения")
         st.info(decisive_factor)
         st.divider()
 
-    # ── Блок 5: CDD Assessment ────────────────────────────────────────────
+    # Блок 4: CDD Assessment
     cdd_assessment = so.get("cdd_assessment", {})
     if cdd_assessment:
         st.subheader("CDD Assessment")
@@ -144,14 +118,15 @@ def render_case_view_tab():
                 st.write(f"✓ {item}")
         with col_nc:
             st.markdown("**Не подтверждено**")
-            for item in cdd_assessment.get("not_confirmed", []) or ["—"]:
+            not_confirmed = cdd_assessment.get("not_confirmed", [])
+            for item in not_confirmed or ["—"]:
                 st.write(f"✗ {item}")
         conclusion = cdd_assessment.get("conclusion", "").strip()
         if conclusion:
             st.caption(f"Вывод: {conclusion}")
         st.divider()
 
-    # ── Блок 6: Rationale + полная нота ──────────────────────────────────
+    # Блок 5: Rationale + полная нота
     rationale = so.get("decision_rationale", "").strip()
     if rationale:
         st.subheader("Обоснование решения")
@@ -161,7 +136,7 @@ def render_case_view_tab():
             st.markdown(note.replace("**", ""))
     st.divider()
 
-    # ── Блок 7: Self-Review ───────────────────────────────────────────────
+    # Блок 6: Self-Review
     error_type  = so.get("error_type", "")
     confidence  = so.get("confidence_score", 0)
     self_review = so.get("self_review", {})
@@ -181,7 +156,7 @@ def render_case_view_tab():
                 st.write(f"**Перепроверить:** {', '.join(what)}")
         st.divider()
 
-    # ── Блок 8: Причины / Required Actions ───────────────────────────────
+    # Блок 7: Причины / Required Actions
     if rejection_reasons or required_actions:
         col8, col9 = st.columns(2)
         with col8:
@@ -196,7 +171,7 @@ def render_case_view_tab():
                     st.write(f"- {item}")
         st.divider()
 
-    # ── Блок 9: Timeline ──────────────────────────────────────────────────
+    # Блок 8: Timeline
     if timeline:
         with st.expander("Timeline"):
             for item in timeline:

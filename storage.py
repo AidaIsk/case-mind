@@ -2,7 +2,11 @@ import os
 import json
 from datetime import datetime
 
-DATA_DIR = "data"
+# Путь к data/ вычисляется относительно корня проекта (на уровень выше storage.py).
+# Это гарантирует корректность независимо от того, из какой директории
+# запускается приложение.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR   = os.path.join(_PROJECT_ROOT, "data")
 CASES_FILE = os.path.join(DATA_DIR, "cases.json")
 
 
