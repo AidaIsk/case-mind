@@ -87,6 +87,7 @@ def check_llm() -> bool:
 
 from trainer.trainer_cases import get_all_trainer_cases, get_trainer_case_by_id
 from trainer.trainer import evaluate_trainer_answer, save_trainer_run, load_trainer_runs
+from trainer.trainer_analytics import summarize_trainer_runs
 
 
 def get_trainer_cases() -> list:
@@ -122,4 +123,14 @@ def submit_trainer_run(
 def get_trainer_runs() -> list:
     """Возвращает историю тренировочных прогонов."""
     return load_trainer_runs()
+
+
+def get_trainer_progress_summary() -> dict:
+    """
+    Агрегирует прогресс аналитика по всей истории trainer runs.
+    UI вызывает только эту функцию — не trainer_analytics напрямую.
+    """
+    runs  = load_trainer_runs()
+    cases = get_all_trainer_cases()
+    return summarize_trainer_runs(runs, cases)
 
