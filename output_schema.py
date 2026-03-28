@@ -1,4 +1,12 @@
 # output_schema.py
+#
+# Слой контроля качества вывода языковой модели.
+#
+# Бизнес-назначение: языковая модель может сформулировать решение,
+# которое звучит убедительно, но нарушает базовые принципы CDD/EDD.
+# Этот модуль — последний программный барьер между "что сказала модель"
+# и "что попало в кейс". Без него система не может гарантировать,
+# что сохранённые решения соответствуют требованиям Risk-Based Approach.
 
 REQUIRED_OUTPUT_KEYS = [
     "decision_mode",
@@ -24,6 +32,12 @@ REQUIRED_OUTPUT_KEYS = [
 ALLOWED_DECISION_MODES = {"edd", "reject", "approve"}
 ALLOWED_DECISIONS = {"Эскалация", "Отказать", "Одобрить"}
 ALLOWED_EDD_VALUES = {"Да", "Нет"}
+
+# Четыре статуса CDD — не просто метки, а юридически значимые состояния.
+# "Incomplete" и "Incomplete and cannot be completed" — принципиально разные:
+# первое открывает путь к EDD, второе требует обязательного отказа.
+# Если эту границу стереть — система начнёт путать закрываемые пробелы
+# с фундаментальной невозможностью установить UBO или SoF.
 ALLOWED_CDD_STATUS = {
     "Complete",
     "Incomplete",
@@ -33,6 +47,11 @@ ALLOWED_CDD_STATUS = {
 ALLOWED_RISK_LEVELS = {"Низкий", "Средний", "Высокий"}
 ALLOWED_REJECT_REASON_TYPES = {"CDD_FAILURE", "RISK_UNACCEPTABLE", "NONE"}
 
+# Классификация аналитических ошибок — основа learning loop.
+# Без этого enum система могла бы только фиксировать решение,
+# но не выявлять, в каком типе кейсов аналитик системно слабеет.
+# OVER_REJECT важен для Risk-Based Approach: чрезмерные отказы
+# создают операционные риски и могут быть оспорены клиентом.
 ALLOWED_ERROR_TYPES = {
     "NONE",
     "OVER_REJECT",
@@ -43,11 +62,21 @@ ALLOWED_ERROR_TYPES = {
     "INCONSISTENT_DECISION",
 }
 
+# Категории сигналов соответствуют стандартным элементам CDD-процедуры:
+# SOF (Source of Funds), screening (Sanctions/PEP/adverse media),
+# Geography (FATF high-risk jurisdictions).
+# Если убрать категоризацию — trace теряет структуру и становится
+# неразличимым для последующего аудита и агрегации.
 ALLOWED_SIGNAL_CATEGORIES = {
     "CDD", "SCREENING", "GEOGRAPHY", "SOF",
     "ECONOMIC_RATIONALE", "PROFILE_MISMATCH", "OTHER",
 }
 ALLOWED_SIGNAL_IMPACTS = {"LOW", "MEDIUM", "HIGH", "DECISIVE"}
+
+# SUPPORTS_REJECT / SUPPORTS_ESCALATION разделены намеренно:
+# сигнал к эскалации не эквивалентен сигналу к отказу.
+# Это различие критично для EDD-кейсов, где пробел закрываем,
+# но ещё не закрыт — смешение направлений замаскирует разницу.
 ALLOWED_SIGNAL_DIRECTIONS = {
     "SUPPORTS_DECISION",
     "SUPPORTS_ESCALATION",
@@ -70,7 +99,13 @@ def _fallback_decisive_factor(mode: str) -> str:
 def validate_decisive_factor_logic(output: dict) -> list[str]:
     """
     Проверяет смысловое соответствие decisive_factor режиму решения.
-    MVP-эвристики: не заменяют полноценный NLU, но ловят явные противоречия.
+
+    Бизнес-правило: decisive_factor — это основание решения, которое
+    аналитик должен быть готов озвучить на комитете или в ответ регулятору.
+    Если оно не соответствует типу кейса, решение становится юридически
+    уязвимым: EDD с формулировкой "невозможно завершить" смешивает
+    закрываемый пробел с фундаментальным структурным барьером,
+    что может привести к неправомерному отказу вместо запроса документов.
     """
     errors = []
     mode = output.get("decision_mode")
@@ -80,8 +115,11 @@ def validate_decisive_factor_logic(output: dict) -> list[str]:
     if not text.strip():
         return ["decisive_factor пуст — логическая проверка невозможна"]
 
-    # EDD: decisive_factor не должен говорить о невозможности CDD —
-    # это противоречит самой идее EDD (gaps закрываемы)
+    # EDD-режим: пробел в CDD закрываем через усиленную проверку.
+    # Формулировка о невозможности завершить CDD здесь недопустима —
+    # она означала бы обязательный отказ, а не запрос документов.
+    # Риск: аналитик потеряет клиента там, где достаточно было
+    # запросить подтверждение SoF или документы по UBO.
     if mode == "edd":
         forbidden = ["не может быть заверш", "невозможно завершить", "завершение невозможно"]
         if any(phrase in text for phrase in forbidden):
@@ -89,7 +127,9 @@ def validate_decisive_factor_logic(output: dict) -> list[str]:
                 "decisive_factor: EDD-кейс не может содержать формулировку о невозможности завершить CDD"
             )
 
-    # Reject / CDD_FAILURE: decisive_factor должен указывать на конкретный CDD-blocker
+    # CDD_FAILURE: отказ должен быть обоснован конкретным структурным барьером.
+    # Регулятор требует назвать причину — "высокий риск" без указания
+    # на UBO/SoF/идентификацию не является достаточным основанием отказа.
     if mode == "reject" and reason == "CDD_FAILURE":
         blocker_signals = [
             "не установлен", "не подтверждён", "не может быть", "невозможно",
@@ -101,7 +141,10 @@ def validate_decisive_factor_logic(output: dict) -> list[str]:
                 "(UBO, идентификация, документы)"
             )
 
-    # Reject / RISK_UNACCEPTABLE: decisive_factor должен отражать risk finding
+    # RISK_UNACCEPTABLE: CDD завершён, но risk appetite банка превышен.
+    # decisive_factor обязан назвать конкретный риск-сигнал (adverse media,
+    # Sanctions, PEP-связи) — именно это является основанием отказа,
+    # а не формальная незавершённость проверки.
     if mode == "reject" and reason == "RISK_UNACCEPTABLE":
         risk_signals = [
             "негатив", "риск", "adverse", "репутац", "публикац",
@@ -118,8 +161,13 @@ def validate_decisive_factor_logic(output: dict) -> list[str]:
 
 def validate_self_review_logic(output: dict) -> list[str]:
     """
-    Проверяет смысловое соответствие error_type, confidence_score и self_review
-    основному решению. MVP-эвристики — ловят явные противоречия.
+    Проверяет консистентность error_type, confidence_score и self_review.
+
+    Бизнес-назначение: self_review — это не самокритика ради самокритики.
+    Это механизм, позволяющий надзорному офицеру или старшему аналитику
+    быстро оценить надёжность решения без перечитывания всего кейса.
+    Если error_type и confidence_score противоречат друг другу,
+    self_review теряет доверие как инструмент контроля качества.
     """
     errors = []
     error_type = output.get("error_type", "")
@@ -128,13 +176,18 @@ def validate_self_review_logic(output: dict) -> list[str]:
     decision_mode = output.get("decision_mode", "")
     main_gap = output.get("self_review", {}).get("main_gap", "").lower()
 
-    # confidence_score = 5 несовместим с error_type != NONE
+    # confidence_score = 5 при наличии зафиксированной ошибки — внутреннее противоречие.
+    # Аналог ситуации, когда аналитик пишет "решение защищаемо" и одновременно
+    # отмечает WEAK_RATIONALE. Такая запись не выдержит compliance-проверки.
     if confidence_score == 5 and error_type != "NONE":
         errors.append(
             "confidence_score = 5 недопустим при наличии error_type != NONE"
         )
 
-    # confidence_score = 5 несовместим с незавершённым CDD
+    # Незавершённый CDD по определению означает неполную информацию.
+    # Максимальная уверенность при неизвестном UBO или SoF —
+    # это красный флаг для любого аудитора: значит, аналитик
+    # не осознаёт существенности пробела в досье клиента.
     if confidence_score == 5 and cdd_status == "Incomplete":
         errors.append(
             "confidence_score = 5 недопустим при cdd_status = Incomplete"
@@ -183,7 +236,13 @@ def validate_self_review_logic(output: dict) -> list[str]:
 def validate_signal_trace_logic(output: dict) -> list[str]:
     """
     Проверяет смысловое соответствие signal_trace режиму решения.
-    MVP-эвристики — ловят явные противоречия между trace и decision.
+
+    Бизнес-назначение: signal_trace — это explainability-артефакт,
+    который позволяет регулятору, аудитору и второй линии защиты
+    проследить логику решения от конкретных фактов к выводу.
+    Без корректного trace решение выглядит как "чёрный ящик",
+    что прямо противоречит требованиям к прозрачности AI-систем
+    в финансовом секторе (FATF Guidance on Digital Identity, EBA Guidelines).
     """
     errors = []
     mode = output.get("decision_mode", "")
@@ -194,7 +253,9 @@ def validate_signal_trace_logic(output: dict) -> list[str]:
     if not isinstance(trace, list):
         return ["signal_trace не является списком — логическая проверка невозможна"]
 
-    # Должен быть хотя бы один DECISIVE сигнал
+    # Без DECISIVE-сигнала невозможно установить, что именно перевесило решение.
+    # Это эквивалентно решению без обоснования — недопустимо
+    # при документировании KYC/AML-процедур для регулятора.
     decisive_signals = [s for s in trace if s.get("impact") == "DECISIVE"]
     if not decisive_signals:
         errors.append("signal_trace: нет ни одного сигнала с impact = DECISIVE")
@@ -214,7 +275,11 @@ def validate_signal_trace_logic(output: dict) -> list[str]:
                 "сигналом уровня DECISIVE"
             )
 
-    # EDD: нельзя писать, что CDD невозможно завершить
+    # EDD-кейс: пробел в CDD существует, но закрываем через запрос документов.
+    # Сигнал о "невозможности завершить CDD" в EDD-контексте —
+    # это CDD_LOGIC_GAP: аналитик путает "информация отсутствует"
+    # с "информацию нельзя получить в принципе".
+    # Первое → EDD, второе → обязательный отказ по CDD_FAILURE.
     if mode == "edd":
         forbidden_phrases = ["невозможно завершить", "не может быть заверш", "завершение невозможно"]
         for s in trace:
@@ -227,7 +292,10 @@ def validate_signal_trace_logic(output: dict) -> list[str]:
                     f"(signal: '{s.get('signal', '')}')"
                 )
 
-    # RISK_UNACCEPTABLE: CDD завершён — нельзя иметь сигналы о неполноте CDD
+    # RISK_UNACCEPTABLE: отказ основан на risk appetite, а не на дефиците данных.
+    # Сигналы о неполноте CDD здесь недопустимы — CDD завершён,
+    # и смешение этих оснований делает отказ уязвимым для оспаривания:
+    # клиент вправе спросить, что именно помешало — данные или риск?
     if reason == "RISK_UNACCEPTABLE":
         cdd_incomplete_signals = [
             "ubo не установлен", "sof не подтверждён",
@@ -241,7 +309,10 @@ def validate_signal_trace_logic(output: dict) -> list[str]:
                     f"но сигнал указывает на неполноту CDD (signal: '{s.get('signal', '')}')"
                 )
 
-    # Approve: не должно быть сигналов с direction = SUPPORTS_REJECT
+    # Approve с сигналом SUPPORTS_REJECT — внутреннее противоречие,
+    # которое укажет на недостаточную проверку при любом последующем аудите.
+    # Если такой сигнал существует — решение должно быть EDD или Reject,
+    # но не Approve.
     if mode == "approve":
         reject_signals = [s for s in trace if s.get("direction") == "SUPPORTS_REJECT"]
         if reject_signals:
@@ -405,7 +476,15 @@ def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
 
 def build_fallback_output(case_data: dict, error_message: str) -> dict:
     """
-    Если structured output сломался, UI всё равно сможет что-то показать.
+    Технический fallback при сбое валидации вывода модели.
+
+    Бизнес-назначение: система никогда не должна сохранять структурно
+    некорректную запись. Fallback обеспечивает, что даже при сбое AI
+    кейс помечается как требующий ручной проверки — вместо того,
+    чтобы тихо сохранить противоречивые данные, которые могут
+    быть ошибочно использованы при последующем аудите.
+    Убрать fallback — значит допустить запись заведомо некорректных
+    решений в историю кейсов, что недопустимо при KYC-документировании.
     """
     recommendation = case_data.get("recommendation", "Эскалация")
     risk_level = case_data.get("selected_risk_level", "Средний")

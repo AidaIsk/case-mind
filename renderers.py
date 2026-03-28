@@ -1,5 +1,20 @@
 # renderers.py
+#
+# Слой рендеринга — превращает валидный JSON в читаемую Аналитическую записку.
+#
+# Бизнес-назначение: Decision Note — это не просто отчёт, это юридический
+# артефакт, который аналитик подписывает своим именем и который может быть
+# запрошен регулятором. Порядок блоков в записке отражает логику
+# compliance-рассуждения: факты → сигналы → ключевой фактор → оценка качества
+# → решение. Если убрать любой из блоков — записка теряет структуру,
+# необходимую для аудита, и становится просто текстом без навигации.
 
+# Словари перевода enum-значений в читаемые метки.
+# CDD-статусы — не просто ярлыки: каждый из них несёт регуляторный смысл.
+# "Incomplete and cannot be completed" — это юридически значимая формулировка:
+# она означает, что банк предпринял все разумные меры, но UBO/SoF
+# установить невозможно. Именно эта формулировка защищает банк
+# при оспаривании отказа в суде или перед регулятором.
 _CDD_STATUS_LABELS = {
     "Complete": "CDD завершён",
     "Incomplete": "CDD не завершён",
@@ -7,6 +22,9 @@ _CDD_STATUS_LABELS = {
     "Complete but risk not acceptable": "CDD завершён, риск не является приемлемым",
 }
 
+# Разделение причин отказа критично для отчётности:
+# CDD_FAILURE и RISK_UNACCEPTABLE требуют разных действий от клиента
+# и разной документации в compliance-файле.
 _REJECT_REASON_LABELS = {
     "CDD_FAILURE": "Невозможность завершить CDD",
     "RISK_UNACCEPTABLE": "Неприемлемый риск",
@@ -21,7 +39,13 @@ def _render_list(items: list[str]) -> list[str]:
 
 
 def _render_self_review(output: dict) -> list[str]:
-    """Формирует блок ## Self-Review для вставки в любой режим ноты."""
+    """
+    Блок Self-Review в записке — это инструмент второй линии защиты.
+    Надзорный офицер видит: какой тип ошибки зафиксирован, насколько
+    аналитик уверен в reasoning и что стоит перепроверить —
+    не перечитывая весь кейс. Убрать этот блок значит лишить
+    руководство механизма быстрого контроля качества решений.
+    """
     lines = []
     error_type = output.get("error_type", "—")
     confidence_score = output.get("confidence_score", "—")
@@ -41,7 +65,13 @@ def _render_self_review(output: dict) -> list[str]:
 
 
 def _render_signal_trace(output: dict) -> list[str]:
-    """Формирует блок ## Signal Trace для вставки в любой режим ноты."""
+    """
+    Signal Trace — explainability-артефакт для регулятора и аудитора.
+    Он отвечает на вопрос: "Из каких конкретных фактов вытекает это решение?"
+    Без него Decision Note — это мнение аналитика без обоснования.
+    С ним — прослеживаемая цепочка от наблюдения к выводу,
+    что соответствует принципам прозрачности AI-систем в финансовом секторе.
+    """
     lines = []
     trace = output.get("signal_trace", [])
 
@@ -62,6 +92,10 @@ def _render_signal_trace(output: dict) -> list[str]:
 
 
 def render_edd_note(output: dict) -> str:
+    # EDD-записка: CDD не завершён, но пробелы закрываемы.
+    # Required Actions здесь обязательны — без них записка
+    # не отвечает на вопрос "что делать дальше",
+    # что делает эскалацию формальной, а не действенной.
     lines = []
 
     lines.append("## Decision Summary")
@@ -118,6 +152,14 @@ def render_edd_note(output: dict) -> str:
 
 
 def render_reject_note(output: dict) -> str:
+    # Reject-записка: два принципиально разных основания.
+    # CDD_FAILURE — невозможно установить UBO или SoF,
+    #   отказ обязателен независимо от уровня риска.
+    # RISK_UNACCEPTABLE — CDD завершён, но risk appetite превышен
+    #   (adverse media, Sanctions, PEP-связи не сняты).
+    # Смешение этих оснований в одной формулировке делает
+    # отказ уязвимым для оспаривания: клиент вправе спросить,
+    # что именно было проблемой — данные или риск.
     lines = []
 
     reject_reason_type = output.get("reject_reason_type", "NONE")
@@ -182,6 +224,11 @@ def render_reject_note(output: dict) -> str:
 
 
 def render_approve_note(output: dict) -> str:
+    # Approve-записка: CDD завершён, risk appetite не превышен.
+    # Даже при положительном решении записка должна документировать
+    # подтверждённые элементы CDD — это защита банка при последующей
+    # проверке: если клиент окажется вовлечён в схему,
+    # записка покажет, что на момент onboarding все проверки были пройдены.
     lines = []
 
     cdd_status_label = _CDD_STATUS_LABELS.get(output.get("cdd_status", ""), output.get("cdd_status", "—"))
@@ -234,6 +281,11 @@ def render_approve_note(output: dict) -> str:
 
 
 def render_decision_note(output: dict) -> str:
+    # Маршрутизация по decision_mode — не просто выбор шаблона.
+    # Каждый режим имеет свою структуру, потому что аудитор
+    # читает EDD-записку иначе, чем Reject: в EDD он ищет
+    # Required Actions, в Reject — основание и тип отказа,
+    # в Approve — подтверждённые элементы CDD.
     mode = output.get("decision_mode")
 
     if mode == "reject":
