@@ -323,6 +323,156 @@ def validate_signal_trace_logic(output: dict) -> list[str]:
     return errors
 
 
+def validate_decision_consistency(output: dict) -> list[str]:
+    """
+    Проверяет верхнеуровневую согласованность решения.
+
+    Бизнес-правило: каждая комбинация decision / cdd_status / reject_reason_type
+    соответствует конкретному правовому и процедурному состоянию кейса.
+    Нарушение означает, что записка будет содержать взаимоисключающие утверждения,
+    что недопустимо при KYC-документировании и аудите.
+    """
+    issues = []
+    mode          = output.get("decision_mode", "")
+    cdd_status    = output.get("cdd_status", "")
+    reason        = output.get("reject_reason_type", "NONE")
+    decisive      = output.get("decisive_factor", "").lower()
+
+    # Reject при завершённом CDD допустим ТОЛЬКО по причине RISK_UNACCEPTABLE.
+    # Reject + Complete + CDD_FAILURE — логическое противоречие:
+    # нельзя отказать из-за невозможности завершить CDD, если CDD завершён.
+    if mode == "reject" and cdd_status == "Complete" and reason != "RISK_UNACCEPTABLE":
+        issues.append(
+            "decision_consistency: Reject при cdd_status = Complete допустим "
+            "только с reject_reason_type = RISK_UNACCEPTABLE"
+        )
+
+    # EDD с формулировкой о невозможности завершить CDD — CDD_LOGIC_GAP.
+    # EDD предполагает, что пробел закрываем; "невозможно завершить" означает Reject.
+    if mode == "edd":
+        forbidden = ["невозможно завершить", "не может быть завершён", "завершение невозможно"]
+        if any(phrase in decisive for phrase in forbidden):
+            issues.append(
+                "decision_consistency: EDD-кейс содержит в decisive_factor "
+                "формулировку о невозможности завершить CDD — "
+                "это противоречит природе EDD (пробелы закрываемы)"
+            )
+
+    # Approve с HIGH/DECISIVE сигналами против решения — внутреннее противоречие.
+    # Если система фиксирует серьёзный риск-сигнал против Approve,
+    # это означает, что аналитик проигнорировал существенный red flag.
+    if mode == "approve":
+        trace = output.get("signal_trace", [])
+        blocking_signals = [
+            s for s in trace
+            if s.get("direction") == "SUPPORTS_REJECT"
+            and s.get("impact") in ("HIGH", "DECISIVE")
+        ]
+        if blocking_signals:
+            issues.append(
+                "decision_consistency: Approve-кейс содержит HIGH/DECISIVE сигналы "
+                "с direction = SUPPORTS_REJECT — решение не защищаемо"
+            )
+
+    return issues
+
+
+def validate_signal_strength_alignment(output: dict) -> list[str]:
+    """
+    Проверяет соответствие весов сигналов итоговому решению.
+
+    Бизнес-правило: решение должно вытекать из реальных сигналов.
+    Если все сигналы слабые (LOW/MEDIUM), но стоит Reject — значит,
+    формальная причина отказа не подкреплена данными кейса.
+    Если есть DECISIVE-сигнал против решения — это флаг пропущенного риска.
+    Без этой проверки система может принять решение, которое
+    противоречит собственному evidence — именно это выявляет аудит.
+    """
+    issues = []
+    mode  = output.get("decision_mode", "")
+    trace = output.get("signal_trace", [])
+
+    if not isinstance(trace, list) or not trace:
+        return issues
+
+    impacts    = [s.get("impact") for s in trace]
+    directions = [s.get("direction") for s in trace]
+
+    # DECISIVE-сигнал к отказу при Approve — пропущенный критический риск.
+    # Это самая опасная ситуация: система зафиксировала решающий red flag,
+    # но решение всё равно положительное.
+    has_decisive_reject = any(
+        s.get("impact") == "DECISIVE" and s.get("direction") == "SUPPORTS_REJECT"
+        for s in trace
+    )
+    if mode == "approve" and has_decisive_reject:
+        issues.append(
+            "signal_strength: DECISIVE сигнал с direction = SUPPORTS_REJECT "
+            "несовместим с decision_mode = approve"
+        )
+
+    # Все сигналы LOW/MEDIUM при Reject — решение не подкреплено данными.
+    # Если нет ни одного HIGH/DECISIVE сигнала, указывающего на Reject,
+    # это OVER_REJECT: аналитик отказывает без весомого основания.
+    if mode == "reject":
+        has_strong_reject_signal = any(
+            s.get("impact") in ("HIGH", "DECISIVE") and s.get("direction") == "SUPPORTS_REJECT"
+            for s in trace
+        )
+        all_low_medium = all(i in ("LOW", "MEDIUM") for i in impacts if i)
+        if all_low_medium and not has_strong_reject_signal:
+            issues.append(
+                "signal_strength: все сигналы LOW/MEDIUM, но decision = Reject — "
+                "решение не подкреплено весомыми данными кейса (возможный OVER_REJECT)"
+            )
+
+    return issues
+
+
+def validate_decisive_factor_alignment(output: dict) -> list[str]:
+    """
+    Проверяет, что decisive_factor подкреплён конкретным сигналом в trace.
+
+    Бизнес-правило: decisive_factor — это основание решения, которое
+    аналитик озвучивает регулятору. Если оно не совпадает ни с одним
+    зафиксированным сигналом — значит, основание существует "в воздухе",
+    без привязки к реальным данным кейса. Это делает решение незащищаемым
+    при compliance-проверке: не на что сослаться, кроме мнения аналитика.
+    """
+    issues = []
+    decisive = output.get("decisive_factor", "").lower().strip()
+    trace    = output.get("signal_trace", [])
+
+    if not decisive or not isinstance(trace, list) or not trace:
+        return issues
+
+    # Ключевые слова из decisive_factor (значимые — длиннее 4 символов)
+    df_words = {w for w in decisive.split() if len(w) > 4}
+    if not df_words:
+        return issues
+
+    # Проверяем пересечение с текстами сигналов уровня DECISIVE
+    decisive_signal_texts = [
+        s.get("signal", "").lower()
+        for s in trace
+        if s.get("impact") == "DECISIVE"
+    ]
+
+    match_found = any(
+        any(word in sig_text for word in df_words)
+        for sig_text in decisive_signal_texts
+    )
+
+    if not match_found:
+        issues.append(
+            "decisive_factor_alignment: decisive_factor не подтверждён "
+            "ни одним DECISIVE сигналом в signal_trace — "
+            "основание решения не привязано к данным кейса"
+        )
+
+    return issues
+
+
 def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
     errors = []
 
@@ -442,8 +592,8 @@ def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
     st = output["signal_trace"]
     if not isinstance(st, list):
         errors.append("signal_trace must be a list")
-    elif len(st) == 0:
-        errors.append("signal_trace must contain at least 1 item")
+    elif len(st) < 2:
+        errors.append("signal_trace must contain at least 2 items")
     elif len(st) > 6:
         errors.append("signal_trace must contain at most 6 items")
     else:
@@ -470,6 +620,27 @@ def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
     if not errors:
         trace_errors = validate_signal_trace_logic(output)
         errors.extend(trace_errors)
+
+    # --- Consistency check: верхнеуровневая согласованность решения ---
+    # Выполняется даже при наличии предыдущих ошибок — даёт полную картину.
+    consistency_issues  = validate_decision_consistency(output)
+    strength_issues     = validate_signal_strength_alignment(output)
+    alignment_issues    = validate_decisive_factor_alignment(output)
+
+    all_issues = consistency_issues + strength_issues + alignment_issues
+    errors.extend(all_issues)
+
+    # --- Validation Report: структурированный лог всех проверок ---
+    # Сохраняется в output для аудита и агрегации качества.
+    # Позволяет надзорному офицеру видеть полную картину проблем
+    # без ручного разбора ошибок валидации.
+    output["validation_report"] = {
+        "passed":              len(errors) == 0,
+        "consistency_issues":  consistency_issues,
+        "strength_issues":     strength_issues,
+        "alignment_issues":    alignment_issues,
+        "all_issues":          all_issues,
+    }
 
     return len(errors) == 0, errors
 
@@ -549,6 +720,23 @@ def build_fallback_output(case_data: dict, error_message: str) -> dict:
                     "Structured output не прошёл валидацию, "
                     "trace нужно определить вручную."
                 ),
-            }
+            },
+            {
+                "signal": "Требуется ручная проверка качества аналитической записки.",
+                "category": "OTHER",
+                "impact": "HIGH",
+                "direction": "SUPPORTS_ESCALATION",
+                "comment": "Fallback-режим: сигналы кейса не были корректно извлечены.",
+            },
         ],
+        # Validation report для fallback: фиксирует, что кейс требует ручной проверки.
+        # Позволяет learning.py и надзорным офицерам отфильтровать
+        # fallback-записи при агрегации качества решений.
+        "validation_report": {
+            "passed":             False,
+            "consistency_issues": [],
+            "strength_issues":    [],
+            "alignment_issues":   [],
+            "all_issues":         ["Fallback-режим: structured output не прошёл валидацию"],
+        },
     }

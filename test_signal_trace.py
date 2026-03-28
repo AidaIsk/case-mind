@@ -124,7 +124,9 @@ def test_schema_rejects_invalid_direction():
 
 def test_schema_rejects_missing_field_in_signal():
     sig = {"signal": "Тест", "category": "CDD", "impact": "DECISIVE"}  # нет direction и comment
-    output = _base_output(signal_trace=[sig])
+    sig2 = {"signal": "Второй.", "category": "SOF", "impact": "HIGH",
+            "direction": "SUPPORTS_ESCALATION", "comment": "OK"}
+    output = _base_output(signal_trace=[sig, sig2])
     ok, errors = validate_output_structure(output)
     assert not ok
     assert any("direction" in e or "comment" in e for e in errors)
