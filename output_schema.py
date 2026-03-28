@@ -18,6 +18,7 @@ REQUIRED_OUTPUT_KEYS = [
     "error_type",
     "confidence_score",
     "self_review",
+    "signal_trace",
 ]
 
 ALLOWED_DECISION_MODES = {"edd", "reject", "approve"}
@@ -40,6 +41,18 @@ ALLOWED_ERROR_TYPES = {
     "WEAK_RATIONALE",
     "CDD_LOGIC_GAP",
     "INCONSISTENT_DECISION",
+}
+
+ALLOWED_SIGNAL_CATEGORIES = {
+    "CDD", "SCREENING", "GEOGRAPHY", "SOF",
+    "ECONOMIC_RATIONALE", "PROFILE_MISMATCH", "OTHER",
+}
+ALLOWED_SIGNAL_IMPACTS = {"LOW", "MEDIUM", "HIGH", "DECISIVE"}
+ALLOWED_SIGNAL_DIRECTIONS = {
+    "SUPPORTS_DECISION",
+    "SUPPORTS_ESCALATION",
+    "SUPPORTS_REJECT",
+    "MITIGATING",
 }
 
 
@@ -167,6 +180,78 @@ def validate_self_review_logic(output: dict) -> list[str]:
     return errors
 
 
+def validate_signal_trace_logic(output: dict) -> list[str]:
+    """
+    Проверяет смысловое соответствие signal_trace режиму решения.
+    MVP-эвристики — ловят явные противоречия между trace и decision.
+    """
+    errors = []
+    mode = output.get("decision_mode", "")
+    reason = output.get("reject_reason_type", "NONE")
+    decisive_factor = output.get("decisive_factor", "").lower()
+    trace = output.get("signal_trace", [])
+
+    if not isinstance(trace, list):
+        return ["signal_trace не является списком — логическая проверка невозможна"]
+
+    # Должен быть хотя бы один DECISIVE сигнал
+    decisive_signals = [s for s in trace if s.get("impact") == "DECISIVE"]
+    if not decisive_signals:
+        errors.append("signal_trace: нет ни одного сигнала с impact = DECISIVE")
+
+    # decisive_factor должен совпадать по смыслу хотя бы с одним DECISIVE signal
+    if decisive_signals and decisive_factor:
+        decisive_texts = [s.get("signal", "").lower() for s in decisive_signals]
+        # Берём ключевые слова из decisive_factor (длиннее 4 символов)
+        df_words = {w for w in decisive_factor.split() if len(w) > 4}
+        match_found = any(
+            any(word in sig_text for word in df_words)
+            for sig_text in decisive_texts
+        )
+        if not match_found:
+            errors.append(
+                "signal_trace: decisive_factor не совпадает по смыслу ни с одним "
+                "сигналом уровня DECISIVE"
+            )
+
+    # EDD: нельзя писать, что CDD невозможно завершить
+    if mode == "edd":
+        forbidden_phrases = ["невозможно завершить", "не может быть заверш", "завершение невозможно"]
+        for s in trace:
+            comment = s.get("comment", "").lower()
+            signal_text = s.get("signal", "").lower()
+            combined = comment + " " + signal_text
+            if any(phrase in combined for phrase in forbidden_phrases):
+                errors.append(
+                    "signal_trace: EDD-кейс содержит сигнал о невозможности завершить CDD "
+                    f"(signal: '{s.get('signal', '')}')"
+                )
+
+    # RISK_UNACCEPTABLE: CDD завершён — нельзя иметь сигналы о неполноте CDD
+    if reason == "RISK_UNACCEPTABLE":
+        cdd_incomplete_signals = [
+            "ubo не установлен", "sof не подтверждён",
+            "документы отсутствуют", "cdd не завершён", "не может быть завершён",
+        ]
+        for s in trace:
+            sig_low = s.get("signal", "").lower()
+            if any(phrase in sig_low for phrase in cdd_incomplete_signals):
+                errors.append(
+                    "signal_trace: RISK_UNACCEPTABLE предполагает завершённый CDD, "
+                    f"но сигнал указывает на неполноту CDD (signal: '{s.get('signal', '')}')"
+                )
+
+    # Approve: не должно быть сигналов с direction = SUPPORTS_REJECT
+    if mode == "approve":
+        reject_signals = [s for s in trace if s.get("direction") == "SUPPORTS_REJECT"]
+        if reject_signals:
+            errors.append(
+                "signal_trace: Approve-кейс содержит сигналы с direction = SUPPORTS_REJECT"
+            )
+
+    return errors
+
+
 def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
     errors = []
 
@@ -282,10 +367,38 @@ def validate_output_structure(output: dict) -> tuple[bool, list[str]]:
                     "self_review.what_to_recheck must contain at most 3 items"
                 )
 
+    # --- signal_trace ---
+    st = output["signal_trace"]
+    if not isinstance(st, list):
+        errors.append("signal_trace must be a list")
+    elif len(st) == 0:
+        errors.append("signal_trace must contain at least 1 item")
+    elif len(st) > 6:
+        errors.append("signal_trace must contain at most 6 items")
+    else:
+        for idx, sig in enumerate(st):
+            if not isinstance(sig, dict):
+                errors.append(f"signal_trace[{idx}] must be an object")
+                continue
+            for field in ["signal", "category", "impact", "direction", "comment"]:
+                if field not in sig:
+                    errors.append(f"signal_trace[{idx}]: missing field '{field}'")
+            if "category" in sig and sig["category"] not in ALLOWED_SIGNAL_CATEGORIES:
+                errors.append(f"signal_trace[{idx}]: invalid category '{sig['category']}'")
+            if "impact" in sig and sig["impact"] not in ALLOWED_SIGNAL_IMPACTS:
+                errors.append(f"signal_trace[{idx}]: invalid impact '{sig['impact']}'")
+            if "direction" in sig and sig["direction"] not in ALLOWED_SIGNAL_DIRECTIONS:
+                errors.append(f"signal_trace[{idx}]: invalid direction '{sig['direction']}'")
+
     # --- Смысловая логика self_review (только если форма валидна) ---
     if not errors:
         logic_errors = validate_self_review_logic(output)
         errors.extend(logic_errors)
+
+    # --- Смысловая логика signal_trace (только если форма валидна) ---
+    if not errors:
+        trace_errors = validate_signal_trace_logic(output)
+        errors.extend(trace_errors)
 
     return len(errors) == 0, errors
 
@@ -347,4 +460,16 @@ def build_fallback_output(case_data: dict, error_message: str) -> dict:
                 "Проверить decisive_factor и decision_rationale",
             ],
         },
+        "signal_trace": [
+            {
+                "signal": _fallback_decisive_factor(decision_mode),
+                "category": "OTHER",
+                "impact": "DECISIVE",
+                "direction": "SUPPORTS_ESCALATION",
+                "comment": (
+                    "Structured output не прошёл валидацию, "
+                    "trace нужно определить вручную."
+                ),
+            }
+        ],
     }

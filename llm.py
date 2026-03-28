@@ -197,7 +197,16 @@ JSON SCHEMA:
     "what_to_recheck": [
       "string"
     ]
-  }}
+  }},
+  "signal_trace": [
+    {{
+      "signal": "string",
+      "category": "CDD|SCREENING|GEOGRAPHY|SOF|ECONOMIC_RATIONALE|PROFILE_MISMATCH|OTHER",
+      "impact": "LOW|MEDIUM|HIGH|DECISIVE",
+      "direction": "SUPPORTS_DECISION|SUPPORTS_ESCALATION|SUPPORTS_REJECT|MITIGATING",
+      "comment": "string"
+    }}
+  ]
 }}
 
 FIELD RULES:
@@ -309,6 +318,34 @@ self_review:
 - what_to_recheck: список 1–3 конкретных точек повторной проверки
   Примеры: UBO, SoF, screening findings, consistency of rationale, соответствие decision статусу CDD
 
+signal_trace:
+- список 2–6 конкретных сигналов, повлиявших на решение
+- каждый объект = один наблюдаемый факт, а не общий вывод
+  ЗАПРЕЩЕНО: "совокупность факторов", "риски в целом" — это выводы, не сигналы
+  ПРАВИЛЬНО: "Источник средств по операции не подтверждён", "Негативные публикации не сняты"
+- ровно один сигнал должен иметь impact = DECISIVE
+- decisive_factor = краткая формулировка того же DECISIVE сигнала (должны совпадать по смыслу)
+- signal: конкретная формулировка на русском языке (1 предложение)
+- category: CDD | SCREENING | GEOGRAPHY | SOF | ECONOMIC_RATIONALE | PROFILE_MISMATCH | OTHER
+- impact: LOW | MEDIUM | HIGH | DECISIVE
+- direction: SUPPORTS_DECISION | SUPPORTS_ESCALATION | SUPPORTS_REJECT | MITIGATING
+- comment: 1 предложение — почему этот сигнал важен для решения
+
+Логика по режимам:
+  EDD: сигналы объясняют, почему CDD не завершён, но пробелы закрываемы
+    — НЕЛЬЗЯ писать "CDD невозможно завершить" или "завершение невозможно"
+    — направление DECISIVE сигнала: SUPPORTS_ESCALATION
+  Reject / CDD_FAILURE: сигналы указывают на невозможность завершить CDD
+    — UBO, SoF, docs, economic rationale
+    — направление DECISIVE сигнала: SUPPORTS_REJECT
+  Reject / RISK_UNACCEPTABLE: CDD завершён, но риск неприемлем
+    — сигналы — это risk findings (негативные публикации, репутационные риски)
+    — НЕЛЬЗЯ включать сигналы о неполноте CDD (UBO не установлен и т.д.)
+    — направление DECISIVE сигнала: SUPPORTS_REJECT
+  Approve: нейтральные или подтверждающие сигналы
+    — НЕЛЬЗЯ включать сигналы с direction = SUPPORTS_REJECT
+    — направление DECISIVE сигнала: SUPPORTS_DECISION
+
 СТИЛИСТИЧЕСКИЕ ПРАВИЛА (применяются ко всем строковым полям):
 
 Запрещённые механические обороты — замени на более естественные:
@@ -364,6 +401,14 @@ self_review:
    - error_type = UNDER_REJECT → decision_mode НЕ "reject"
    - error_type != NONE → self_review.main_gap содержит конкретный gap, не пустую фразу
    - error_type = NONE → self_review.main_gap не содержит слов "критическ", "невозможн", "blocker"
+
+8. SIGNAL TRACE — обязательная самопроверка:
+   - в signal_trace есть ровно один сигнал с impact = DECISIVE
+   - decisive_factor совпадает по смыслу с текстом этого DECISIVE сигнала
+   - если decision_mode = "edd": ни один сигнал не содержит "невозможно завершить" или "не может быть завершён"
+   - если reject_reason_type = "RISK_UNACCEPTABLE": ни один сигнал не говорит о неполноте CDD (UBO не установлен и т.д.)
+   - если decision_mode = "approve": ни один сигнал не имеет direction = SUPPORTS_REJECT
+   - сигналы конкретные ("Негативные публикации не сняты"), не общие ("риски неприемлемы")
 
 INPUT CASE DATA:
 {json.dumps(case_data, ensure_ascii=False, indent=2)}

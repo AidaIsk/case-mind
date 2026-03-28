@@ -40,6 +40,27 @@ def _render_self_review(output: dict) -> list[str]:
     return lines
 
 
+def _render_signal_trace(output: dict) -> list[str]:
+    """Формирует блок ## Signal Trace для вставки в любой режим ноты."""
+    lines = []
+    trace = output.get("signal_trace", [])
+
+    lines.append("## Signal Trace")
+    if not trace:
+        lines.append("- —")
+    else:
+        for sig in trace:
+            impact = sig.get("impact", "—")
+            signal = sig.get("signal", "—")
+            comment = sig.get("comment", "").strip()
+            prefix = f"[{impact}]"
+            lines.append(f"- {prefix} {signal}")
+            if comment:
+                lines.append(f"  _{comment}_")
+    lines.append("")
+    return lines
+
+
 def render_edd_note(output: dict) -> str:
     lines = []
 
@@ -77,6 +98,8 @@ def render_edd_note(output: dict) -> str:
     lines.append("## Analysis")
     lines.append(output.get("analysis", "—"))
     lines.append("")
+
+    lines.extend(_render_signal_trace(output))
 
     lines.append("## Decisive Factor")
     lines.append(output.get("decisive_factor", "—"))
@@ -138,6 +161,8 @@ def render_reject_note(output: dict) -> str:
     lines.append(output.get("analysis", "—"))
     lines.append("")
 
+    lines.extend(_render_signal_trace(output))
+
     lines.append("## Decisive Factor")
     lines.append(output.get("decisive_factor", "—"))
     lines.append("")
@@ -193,6 +218,8 @@ def render_approve_note(output: dict) -> str:
     lines.append("## Analysis")
     lines.append(output.get("analysis", "—"))
     lines.append("")
+
+    lines.extend(_render_signal_trace(output))
 
     lines.append("## Decisive Factor")
     lines.append(output.get("decisive_factor", "—"))
