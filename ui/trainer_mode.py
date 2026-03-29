@@ -1,7 +1,9 @@
-# ui/trainer_mode.py  —  Trainer Mode v2
-# Decision Note mode, три режима навигации, coach_message, фильтр истории.
+# ui/trainer_mode.py  —  Trainer Mode v2 micro-polish
+# combined_summary, краткий/подробный review, шаблон записки,
+# визуальное сравнение score, фильтр "сегодня", empty-states.
 
 import streamlit as st
+from datetime import date as _date
 
 from core.services import (
     get_trainer_cases,
@@ -12,30 +14,28 @@ from core.services import (
     get_next_trainer_case_by_mode,
 )
 
-# ── Словари локализации ──────────────────────────────────────────────────
+# ── Словари ──────────────────────────────────────────────────────────────
 
-_DECISION_MODE_RU  = {"approve": "Одобрить", "edd": "Эскалация (EDD)", "reject": "Отказать"}
-_DECISION_MODE_EN  = {v: k for k, v in _DECISION_MODE_RU.items()}
-_CDD_STATUS_RU     = {
+_DM_RU   = {"approve": "Одобрить", "edd": "Эскалация (EDD)", "reject": "Отказать"}
+_DM_EN   = {v: k for k, v in _DM_RU.items()}
+_CDD_RU  = {
     "Complete":                           "CDD завершён",
     "Incomplete":                         "CDD не завершён",
     "Incomplete and cannot be completed": "CDD не может быть завершён",
     "Complete but risk not acceptable":   "CDD завершён, но риск неприемлем",
 }
-_CDD_STATUS_EN     = {v: k for k, v in _CDD_STATUS_RU.items()}
-_REJECT_REASON_RU  = {
-    "NONE": "Нет", "CDD_FAILURE": "CDD не может быть завершён",
-    "RISK_UNACCEPTABLE": "Неприемлемый риск",
-}
-_REJECT_REASON_EN  = {v: k for k, v in _REJECT_REASON_RU.items()}
-_TREND_LABEL       = {
+_CDD_EN  = {v: k for k, v in _CDD_RU.items()}
+_RR_RU   = {"NONE": "Нет", "CDD_FAILURE": "CDD не может быть завершён",
+             "RISK_UNACCEPTABLE": "Неприемлемый риск"}
+_RR_EN   = {v: k for k, v in _RR_RU.items()}
+_TREND   = {
     "improving": "📈 Растёт", "declining": "📉 Снижается", "stable": "➡️ Стабильно",
     "preliminary_improving": "📈 Предварительно растёт",
     "preliminary_declining": "📉 Предварительно снижается",
     "preliminary_stable":    "➡️ Предварительно стабильно",
     "not_enough_data": "⏳ Недостаточно данных",
 }
-_ROOT_CAUSE_RU     = {
+_RC_RU   = {
     "NONE": "Ошибок не выявлено", "MISREAD_CDD_STATUS": "Неверный статус CDD",
     "MISSED_SOF_GAP": "Пропущен пробел по SoF",
     "MISSED_UBO_BLOCKER": "Пропущен блокер по UBO",
@@ -44,83 +44,103 @@ _ROOT_CAUSE_RU     = {
     "WEAK_DECISIVE_FACTOR": "Расплывчатый decisive factor",
     "WEAK_SIGNAL_TRACE": "Неполный signal trace", "WEAK_RATIONALE": "Слабое обоснование",
 }
-_NOTE_QUALITY_RU   = {"strong": "✅ Сильная", "acceptable": "🟡 Приемлемая", "weak": "🔴 Слабая"}
-_DIFFICULTY_ICON   = {"beginner": "🟢", "intermediate": "🟡", "advanced": "🔴"}
-_NAV_MODES         = {"unfinished_today": "Непройденный сегодня", "sequential": "Подряд", "random": "Случайный"}
-MAX_SIGNALS        = 8
+_NQ_RU   = {"strong": "✅ Сильная", "acceptable": "🟡 Приемлемая", "weak": "🔴 Слабая"}
+_D_ICON  = {"beginner": "🟢", "intermediate": "🟡", "advanced": "🔴"}
+_NAV     = {"unfinished_today": "Непройденный сегодня", "sequential": "Подряд", "random": "Случайный"}
+MAX_SIG  = 8
+
+_NOTE_TEMPLATE = """**Шаблон аналитической записки:**
+
+1. **Клиент / кейс** — кто клиент, тип кейса, страна, вид деятельности  
+2. **Факты** — UBO, SoF, документы, результаты screening (sanctions, PEP, adverse media)  
+3. **Red flags / триггеры** — что привлекло внимание  
+4. **Анализ и уровень риска** — что именно вызывает вопросы и почему это важно  
+5. **Решение** — какое решение принято  
+6. **Аргументация** — почему именно это решение, ссылка на ключевой фактор  
+
+*Не подглядывай в данные кейса — пиши по памяти из формы выше.*"""
 
 
-# ── Блок прогресса ───────────────────────────────────────────────────────
-
-def _score_icon(score):
+def _sicon(score):
     return "🟢" if score >= 85 else ("🟡" if score >= 60 else "🔴")
 
 
-def _render_progress_summary():
-    summary = get_trainer_progress_summary()
-    if summary["total_runs"] == 0:
-        st.info("Пока нет прогонов. Реши первый кейс — и здесь появится статистика.")
+# ── Прогресс ─────────────────────────────────────────────────────────────
+
+def _render_progress():
+    s = get_trainer_progress_summary()
+    if s["total_runs"] == 0:
+        st.info("Пока нет прогонов — реши первый кейс, и здесь появится статистика.")
         return
     st.subheader("Прогресс")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Прогонов",       summary["total_runs"])
-    c2.metric("Средний score",  f"{summary['avg_score']} / 100")
-    c3.metric("Верных решений", f"{summary['correct_decision_rate']}%")
-    c4.metric("Тренд",          _TREND_LABEL.get(summary["score_trend"], "—"))
-    st.warning(f"⚠️ **Слабая зона:** {summary['weak_zone']}")
-    dist = {k: v for k, v in summary.get("root_cause_distribution", {}).items() if k != "NONE"}
+    c1.metric("Прогонов",       s["total_runs"])
+    c2.metric("Средний score",  f"{s['avg_score']} / 100")
+    c3.metric("Верных решений", f"{s['correct_decision_rate']}%")
+    c4.metric("Тренд",          _TREND.get(s["score_trend"], "—"))
+    st.warning(f"⚠️ **Слабая зона:** {s['weak_zone']}")
+    dist = {k: v for k, v in s.get("root_cause_distribution", {}).items() if k != "NONE"}
     if dist:
-        top3 = list(dist.items())[:3]
-        st.caption("Частые причины ошибок: " + "  |  ".join(
-            f"**{_ROOT_CAUSE_RU.get(k, k)}**: {v}" for k, v in top3
-        ))
+        st.caption("Частые причины: " + "  |  ".join(
+            f"**{_RC_RU.get(k, k)}**: {v}" for k, v in list(dist.items())[:3]))
     st.divider()
 
 
-# ── История прогонов с фильтром ──────────────────────────────────────────
+# ── История прогонов ──────────────────────────────────────────────────────
 
-def _render_trainer_history():
+def _render_history():
     runs = get_trainer_runs()
-    if not runs:
-        return
-
     st.subheader("История прогонов")
 
-    # Фильтр
-    filter_mode = st.radio(
+    # Фильтр — теперь 4 варианта
+    flt = st.radio(
         "Показывать:",
-        ["Все", "Только ошибки", "Только низкий score"],
-        horizontal=True,
-        key="history_filter",
+        ["Все", "Только ошибки", "Только низкий score", "Только сегодня"],
+        horizontal=True, key="history_filter",
     )
 
+    today = _date.today().strftime("%Y-%m-%d")
     filtered = list(reversed(runs))
-    if filter_mode == "Только ошибки":
+
+    if flt == "Только ошибки":
         filtered = [r for r in filtered
                     if r.get("root_cause", "NONE") != "NONE"
                     or r.get("error_type", "NONE") != "NONE"]
-    elif filter_mode == "Только низкий score":
+    elif flt == "Только низкий score":
         filtered = [r for r in filtered if r.get("score", 100) < 60]
+    elif flt == "Только сегодня":
+        filtered = [r for r in filtered if r.get("saved_at", "").startswith(today)]
 
+    # Empty-states
+    if not runs:
+        st.info("Пока нет прогонов — реши первый кейс, и здесь появится история.")
+        return
     if not filtered:
-        st.info("Нет прогонов, соответствующих фильтру.")
+        empty_msgs = {
+            "Только ошибки":      "Ошибок по выбранному фильтру не найдено.",
+            "Только низкий score":"Низких score пока нет — это хороший знак. 🎉",
+            "Только сегодня":     "Сегодня ещё нет прогонов.",
+        }
+        st.info(empty_msgs.get(flt, "Нет прогонов по выбранному фильтру."))
         return
 
     for run in filtered[:10]:
-        score   = run.get("score", 0)
-        icon    = _score_icon(score)
-        root    = _ROOT_CAUSE_RU.get(run.get("root_cause", ""), "—")
-        correct = "✅" if run.get("is_correct_decision") else "❌"
-        note_sc = run.get("note_score")
-        note_str = f"  |  📝 Note: {note_sc}" if note_sc is not None else ""
+        score     = run.get("score", 0)
+        note_sc   = run.get("note_score")
+        icon      = _sicon(score)
+        root      = _RC_RU.get(run.get("root_cause", ""), "—")
+        correct   = "✅" if run.get("is_correct_decision") else "❌"
+        note_part = f"  |  📝 {note_sc}" if note_sc is not None else ""
+        combined  = run.get("review", {}).get("combined_summary", "")
 
         with st.expander(
             f"{run.get('saved_at', '—')}  |  {run.get('trainer_case_id', '—')}  "
-            f"|  {icon} {score}/100  |  {correct}{note_str}",
+            f"|  {icon} {score}/100{note_part}  |  {correct}",
             expanded=False,
         ):
-            st.write(f"**Run ID:** `{run.get('run_id', '—')}`")
             st.write(f"**Диагноз:** {root}")
+            if combined:
+                st.write(f"**Итог:** {combined}")
             coach = run.get("review", {}).get("coach_message", "")
             if coach:
                 st.info(f"💬 {coach}")
@@ -129,77 +149,167 @@ def _render_trainer_history():
                     st.write(run["decision_note"])
 
 
+# ── Результаты review ────────────────────────────────────────────────────
+
+def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_mode: str, run_id: str, case_id: str):
+    """Отображает результаты review — краткий или подробный режим."""
+    st.divider()
+    st.subheader("Разбор")
+
+    score    = review["score"]
+    note_sc  = review.get("note_score")
+    note_rev = review.get("note_review")
+    combined = review.get("combined_summary", "")
+    root     = _RC_RU.get(review["root_cause"], review["root_cause"])
+
+    # Режим review
+    review_mode = st.radio(
+        "Режим разбора:", ["Краткий", "Подробный"],
+        horizontal=True, key=f"review_mode_{run_id}",
+    )
+
+    # ── Всегда: score + диагноз + coach + combined ──────────────────────
+    c1, c2 = st.columns(2)
+    c1.metric("Score", f"{_sicon(score)} {score} / 100")
+    c2.metric("Диагноз", root)
+
+    if review.get("coach_message"):
+        st.info(f"💬 **Наставник:** {review['coach_message']}")
+
+    if combined:
+        st.success(f"**Итог:** {combined}")
+
+    # ── Сравнение score и note_score ────────────────────────────────────
+    if note_sc is not None:
+        st.markdown("**Сравнение оценок**")
+        sc1, sc2 = st.columns(2)
+        sc1.metric("Structured score", f"{_sicon(score)} {score} / 100")
+        sc2.metric("Decision Note score", f"{_sicon(note_sc)} {note_sc} / 100")
+
+        delta = score - note_sc
+        if abs(delta) >= 15:
+            if delta > 0:
+                st.caption("💡 Ты лучше определяешь решение, чем формулируешь аналитическую записку.")
+            else:
+                st.caption("💡 Записка звучит лучше, чем структурная логика решения.")
+    else:
+        sc1, _ = st.columns(2)
+        sc1.metric("Structured score", f"{_sicon(score)} {score} / 100")
+        st.caption("Decision Note не была заполнена — оценка недоступна.")
+
+    # ── Подробный режим ─────────────────────────────────────────────────
+    if review_mode == "Подробный":
+        col_g, col_m = st.columns(2)
+        with col_g:
+            st.markdown("**✅ Что верно:**")
+            for item in review.get("what_was_good", []):
+                st.write(f"- {item}")
+        with col_m:
+            st.markdown("**❌ Что пропущено:**")
+            for item in review.get("what_was_missed", []):
+                st.write(f"- {item}")
+
+        if review.get("what_to_recheck"):
+            st.markdown("**🔁 Что перепроверить:**")
+            for item in review["what_to_recheck"]:
+                st.write(f"- {item}")
+
+        if note_rev:
+            with st.expander("Разбор аналитической записки", expanded=False):
+                nq = _NQ_RU.get(note_rev.get("note_quality", ""), "")
+                st.write(f"**Качество:** {nq}  —  score {note_sc}/100")
+                st.write(f"**Резюме:** {note_rev.get('note_summary', '—')}")
+                if note_rev.get("note_issues"):
+                    for issue in note_rev["note_issues"]:
+                        st.write(f"- {issue}")
+
+        with st.expander("📖 Эталонный ответ", expanded=False):
+            exp = expected_output
+            st.write(f"**Решение:** {_DM_RU.get(exp.get('decision_mode', ''), '—')}")
+            st.write(f"**Статус CDD:** {_CDD_RU.get(exp.get('cdd_status', ''), '—')}")
+            st.write(f"**Тип отказа:** {_RR_RU.get(exp.get('reject_reason_type', ''), '—')}")
+            st.write(f"**Ключевой фактор:** {exp.get('decisive_factor', '—')}")
+            for sig in exp.get("signal_trace", []):
+                st.write(f"- [{sig['impact']}] {sig['signal']}")
+
+    # ── Кнопка следующего ───────────────────────────────────────────────
+    nav_en = {v: k for k, v in _NAV.items()}[nav_mode]
+    next_c = get_next_trainer_case_by_mode(case_id, nav_en)
+    if next_c is None and nav_en == "unfinished_today":
+        st.success("✅ На сегодня все кейсы уже пройдены!")
+    elif next_c:
+        if st.button(f"⏭️ Следующий: {next_c['case_id']} — {next_c['theme']}"):
+            st.session_state["trainer_selected_case_id"] = next_c["case_id"]
+            st.rerun()
+
+    st.caption(f"Run ID: `{run_id}`")
+    st.divider()
+    _render_history()
+
+
 # ── Главная вкладка ───────────────────────────────────────────────────────
 
 def render_trainer_tab():
     st.header("Trainer Mode")
     st.caption("Разбери учебный кейс, запиши ответ и аналитическую записку — получи разбор.")
 
-    _render_progress_summary()
+    _render_progress()
 
     cases = get_trainer_cases()
     if not cases:
         st.warning("Тренировочные кейсы не найдены.")
         return
 
-    # ── Режим навигации ───────────────────────────────────────────────────
+    # Навигация
     col_nav, col_btn = st.columns([3, 2])
     with col_nav:
-        nav_mode_ru = st.radio(
-            "Режим следующего кейса:",
-            list(_NAV_MODES.values()),
-            horizontal=True,
-            index=0,
-            key="trainer_nav_mode",
+        nav_mode = st.radio(
+            "Режим следующего кейса:", list(_NAV.values()),
+            horizontal=True, index=0, key="trainer_nav_mode",
         )
-    nav_mode_en = {v: k for k, v in _NAV_MODES.items()}[nav_mode_ru]
-
     with col_btn:
-        st.write("")
-        st.write("")
+        st.write(""); st.write("")
         if st.button("⏭️ Следующий кейс"):
-            current = st.session_state.get("trainer_selected_case_id")
-            next_case = get_next_trainer_case_by_mode(current, nav_mode_en)
-            if next_case is None:
+            current  = st.session_state.get("trainer_selected_case_id")
+            nav_en   = {v: k for k, v in _NAV.items()}[nav_mode]
+            next_c   = get_next_trainer_case_by_mode(current, nav_en)
+            if next_c is None:
                 st.success("✅ На сегодня все кейсы уже пройдены.")
             else:
-                st.session_state["trainer_selected_case_id"] = next_case["case_id"]
+                st.session_state["trainer_selected_case_id"] = next_c["case_id"]
                 st.rerun()
 
-    # ── Selectbox ─────────────────────────────────────────────────────────
-    options_label = [
-        f"{c['case_id']} — {_DIFFICULTY_ICON.get(c['difficulty'], '⚪')} {c['difficulty'].capitalize()} — {c['theme']}"
-        for c in cases
-    ]
-    options_id = [c["case_id"] for c in cases]
-    default_idx = 0
-    saved_id = st.session_state.get("trainer_selected_case_id")
-    if saved_id and saved_id in options_id:
-        default_idx = options_id.index(saved_id)
+    # Selectbox
+    labels = [f"{c['case_id']} — {_D_ICON.get(c['difficulty'], '⚪')} {c['difficulty'].capitalize()} — {c['theme']}"
+              for c in cases]
+    ids = [c["case_id"] for c in cases]
+    def_idx = 0
+    if st.session_state.get("trainer_selected_case_id") in ids:
+        def_idx = ids.index(st.session_state["trainer_selected_case_id"])
 
-    selected_label = st.selectbox("Выбери кейс", options_label, index=default_idx, key="trainer_case_select")
-    case_id = options_id[options_label.index(selected_label)]
+    sel = st.selectbox("Выбери кейс", labels, index=def_idx, key="trainer_case_select")
+    case_id = ids[labels.index(sel)]
     st.session_state["trainer_selected_case_id"] = case_id
 
-    trainer_case = get_trainer_case(case_id)
-    if not trainer_case:
+    tc = get_trainer_case(case_id)
+    if not tc:
         st.error(f"Кейс {case_id} не найден.")
         return
 
-    # ── Описание кейса ────────────────────────────────────────────────────
-    st.subheader(f"Кейс {trainer_case['case_id']}")
-    st.info(trainer_case.get("description_user", trainer_case.get("description", "")))
+    # Описание
+    st.subheader(f"Кейс {tc['case_id']}")
+    st.info(tc.get("description_user", tc.get("description", "")))
 
     with st.expander("📋 Данные кейса", expanded=False):
-        cd = trainer_case["case_data"]
-        col1, col2 = st.columns(2)
-        with col1:
+        cd = tc["case_data"]
+        c1, c2 = st.columns(2)
+        with c1:
             st.write(f"**Клиент:** {cd.get('client_name', '—')}")
             st.write(f"**Тип:** {cd.get('client_type', '—')}")
             st.write(f"**Страна:** {cd.get('registration_country', '—')}")
             st.write(f"**Деятельность:** {cd.get('business_activity', '—')}")
             st.write(f"**Тип кейса:** {cd.get('case_type', '—')}")
-        with col2:
+        with c2:
             st.write(f"**UBO:** {cd.get('beneficial_owner_identified', '—')}")
             st.write(f"**SoF:** {cd.get('source_of_funds_summary') or '❌ не указан'}")
             st.write(f"**Документы:** {cd.get('supporting_documents_provided', '—')}")
@@ -210,8 +320,6 @@ def render_trainer_tab():
             st.warning(f"**Нерешённые вопросы:** {cd['unresolved_screening_issues']}")
 
     st.divider()
-
-    # ── Форма ответа ──────────────────────────────────────────────────────
     st.subheader("Твой ответ")
 
     sig_key = f"signals_{case_id}"
@@ -219,92 +327,79 @@ def render_trainer_tab():
         st.session_state[sig_key] = ["", ""]
 
     with st.form(key=f"trainer_form_{case_id}"):
-        col_a, col_b = st.columns(2)
-        with col_a:
-            decision_ru = st.selectbox("Решение", list(_DECISION_MODE_RU.values()), key=f"dm_{case_id}")
-            cdd_ru      = st.selectbox("Статус CDD", list(_CDD_STATUS_RU.values()), key=f"cdd_{case_id}")
-            reason_ru   = st.selectbox("Тип отказа", list(_REJECT_REASON_RU.values()), key=f"rr_{case_id}")
-        with col_b:
-            confidence = st.slider(
+        ca, cb = st.columns(2)
+        with ca:
+            dm_ru  = st.selectbox("Решение", list(_DM_RU.values()), key=f"dm_{case_id}")
+            cdd_ru = st.selectbox("Статус CDD", list(_CDD_RU.values()), key=f"cdd_{case_id}")
+            rr_ru  = st.selectbox("Тип отказа", list(_RR_RU.values()), key=f"rr_{case_id}")
+        with cb:
+            conf = st.slider(
                 "Уверенность (confidence_score)", 1, 5, 3,
                 help="Насколько ты уверена в своём решении. "
                      "Используется для анализа переуверенности и недоуверенности.",
                 key=f"conf_{case_id}",
             )
-            decisive_factor = st.text_area(
-                "Ключевой фактор решения (decisive_factor)",
+            df = st.text_area(
+                "Ключевой фактор решения",
                 placeholder="Одна конкретная формулировка главного перевешивающего фактора",
                 key=f"df_{case_id}", height=90,
             )
 
-        # Динамические сигналы
         st.markdown("**Сигналы (signal_trace)**")
-        signal_inputs = []
+        sigs = []
         for i, val in enumerate(st.session_state[sig_key]):
-            sig_val = st.text_input(
-                f"Сигнал {i + 1}", value=val,
-                placeholder="Конкретный наблюдаемый факт",
-                key=f"sig_{case_id}_{i}",
-            )
-            signal_inputs.append(sig_val)
+            sv = st.text_input(f"Сигнал {i+1}", value=val,
+                               placeholder="Конкретный наблюдаемый факт",
+                               key=f"sig_{case_id}_{i}")
+            sigs.append(sv)
 
-        col_add, col_rem, _ = st.columns([1, 1, 4])
-        add_signal = col_add.form_submit_button("＋ Добавить сигнал")
-        rem_signal = col_rem.form_submit_button("－ Удалить последний")
+        ca2, cb2, _ = st.columns([1, 1, 4])
+        add_s = ca2.form_submit_button("＋ Добавить сигнал")
+        rem_s = cb2.form_submit_button("－ Удалить последний")
 
-        # ── Decision Note ──────────────────────────────────────────────────
-        st.markdown("---")
-        decision_note = st.text_area(
+        # Шаблон-подсказка для Decision Note
+        with st.expander("💡 Подсказка по структуре аналитической записки", expanded=False):
+            st.markdown(_NOTE_TEMPLATE)
+
+        dn = st.text_area(
             "Decision Note (аналитическая записка)",
             placeholder=(
-                "Напиши краткую аналитическую записку по кейсу: "
-                "кто клиент, ключевые факты, red flags, анализ рисков, решение и аргументация."
+                "Напиши краткую аналитическую записку: "
+                "кто клиент, факты, red flags, анализ, решение, аргументация."
             ),
-            key=f"note_{case_id}",
-            height=220,
+            key=f"note_{case_id}", height=220,
         )
-
         submitted = st.form_submit_button("🔍 Получить разбор")
 
-    # Обработка ± сигналов
-    if add_signal:
-        if len(st.session_state[sig_key]) < MAX_SIGNALS:
-            st.session_state[sig_key] = signal_inputs + [""]
+    if add_s:
+        if len(st.session_state[sig_key]) < MAX_SIG:
+            st.session_state[sig_key] = sigs + [""]
         st.rerun()
-    if rem_signal:
+    if rem_s:
         if len(st.session_state[sig_key]) > 2:
-            st.session_state[sig_key] = signal_inputs[:-1]
+            st.session_state[sig_key] = sigs[:-1]
         st.rerun()
 
     if not submitted:
         return
 
-    # ── Сборка user_output ────────────────────────────────────────────────
-    decision_mode = _DECISION_MODE_EN[decision_ru]
-    cdd_status    = _CDD_STATUS_EN[cdd_ru]
-    reject_reason = _REJECT_REASON_EN[reason_ru]
-
-    sig_dir = {"edd": "SUPPORTS_ESCALATION", "reject": "SUPPORTS_REJECT"}.get(decision_mode, "SUPPORTS_DECISION")
-    filled  = [s.strip() for s in signal_inputs if s.strip()]
-    signal_trace = [
-        {"signal": t, "category": "OTHER",
-         "impact": "DECISIVE" if i == 0 else "HIGH",
-         "direction": sig_dir, "comment": "Сигнал аналитика."}
-        for i, t in enumerate(filled)
-    ]
-    while len(signal_trace) < 2:
-        signal_trace.append({"signal": "Дополнительный контекст не указан.", "category": "OTHER",
-                              "impact": "LOW", "direction": "MITIGATING", "comment": "Автоматически добавлен."})
+    # Сборка user_output
+    dm = _DM_EN[dm_ru]; cdd = _CDD_EN[cdd_ru]; rr = _RR_EN[rr_ru]
+    sd = {"edd": "SUPPORTS_ESCALATION", "reject": "SUPPORTS_REJECT"}.get(dm, "SUPPORTS_DECISION")
+    filled = [s.strip() for s in sigs if s.strip()]
+    trace  = [{"signal": t, "category": "OTHER",
+               "impact": "DECISIVE" if i == 0 else "HIGH",
+               "direction": sd, "comment": "Сигнал аналитика."} for i, t in enumerate(filled)]
+    while len(trace) < 2:
+        trace.append({"signal": "Дополнительный контекст не указан.", "category": "OTHER",
+                      "impact": "LOW", "direction": "MITIGATING", "comment": "Автоматически добавлен."})
 
     user_output = {
-        "decision_mode": decision_mode, "decision": _DECISION_MODE_RU[decision_mode],
-        "edd_required": "Да" if decision_mode == "edd" else "Нет",
-        "cdd_status": cdd_status,
-        "risk_level": trainer_case["case_data"].get("selected_risk_level", "Средний"),
-        "reject_reason_type": reject_reason,
-        "decisive_factor": decisive_factor.strip() or "—",
-        "error_type": "NONE", "confidence_score": confidence,
-        "signal_trace": signal_trace,
+        "decision_mode": dm, "decision": _DM_RU[dm],
+        "edd_required": "Да" if dm == "edd" else "Нет",
+        "cdd_status": cdd, "risk_level": tc["case_data"].get("selected_risk_level", "Средний"),
+        "reject_reason_type": rr, "decisive_factor": df.strip() or "—",
+        "error_type": "NONE", "confidence_score": conf, "signal_trace": trace,
         "decision_summary": "", "case_overview": "", "key_risk_factors": [],
         "cdd_assessment": {"confirmed": [], "not_confirmed": [], "conclusion": ""},
         "analysis": "", "decision_rationale": "", "required_actions": [],
@@ -312,75 +407,7 @@ def render_trainer_tab():
     }
 
     with st.spinner("Анализирую ответ..."):
-        review, run_id = submit_trainer_run(
-            case_id, user_output, trainer_case["expected_output"],
-            decision_note=decision_note,
-        )
+        review, run_id = submit_trainer_run(case_id, user_output, tc["expected_output"], decision_note=dn)
 
     st.session_state[sig_key] = ["", ""]
-
-    # ── Результаты review ─────────────────────────────────────────────────
-    st.divider()
-    st.subheader("Разбор")
-
-    score  = review["score"]
-    c1, c2 = st.columns(2)
-    c1.metric("Score", f"{_score_icon(score)} {score} / 100")
-    c2.metric("Диагноз", _ROOT_CAUSE_RU.get(review["root_cause"], review["root_cause"]))
-
-    # Coach message — заметный блок
-    if review.get("coach_message"):
-        st.info(f"💬 **Наставник:** {review['coach_message']}")
-
-    # Note review
-    if review.get("note_review"):
-        nr = review["note_review"]
-        n_score = nr["note_score"]
-        n_qual  = _NOTE_QUALITY_RU.get(nr["note_quality"], nr["note_quality"])
-        st.write(f"**Аналитическая записка:** {n_qual}  —  score {n_score}/100")
-        if nr["note_issues"]:
-            with st.expander("Замечания к записке", expanded=False):
-                for issue in nr["note_issues"]:
-                    st.write(f"- {issue}")
-    elif decision_note.strip():
-        st.caption("Записка получена, но оценка недоступна.")
-    else:
-        st.caption("Decision Note не была заполнена.")
-
-    col_g, col_m = st.columns(2)
-    with col_g:
-        st.markdown("**✅ Что верно:**")
-        for item in review["what_was_good"]:
-            st.write(f"- {item}")
-    with col_m:
-        st.markdown("**❌ Что пропущено:**")
-        for item in review["what_was_missed"]:
-            st.write(f"- {item}")
-
-    if review["what_to_recheck"]:
-        st.markdown("**🔁 Что перепроверить:**")
-        for item in review["what_to_recheck"]:
-            st.write(f"- {item}")
-
-    with st.expander("📖 Эталонный ответ", expanded=False):
-        exp = trainer_case["expected_output"]
-        st.write(f"**Решение:** {_DECISION_MODE_RU.get(exp.get('decision_mode', ''), '—')}")
-        st.write(f"**Статус CDD:** {_CDD_STATUS_RU.get(exp.get('cdd_status', ''), '—')}")
-        st.write(f"**Тип отказа:** {_REJECT_REASON_RU.get(exp.get('reject_reason_type', ''), '—')}")
-        st.write(f"**Ключевой фактор:** {exp.get('decisive_factor', '—')}")
-        for sig in exp.get("signal_trace", []):
-            st.write(f"- [{sig['impact']}] {sig['signal']}")
-
-    # Кнопка следующего
-    next_case = get_next_trainer_case_by_mode(case_id, nav_mode_en)
-    if next_case is None and nav_mode_en == "unfinished_today":
-        st.success("✅ На сегодня все кейсы уже пройдены!")
-    elif next_case:
-        if st.button(f"⏭️ Следующий: {next_case['case_id']} — {next_case['theme']}"):
-            st.session_state["trainer_selected_case_id"] = next_case["case_id"]
-            st.rerun()
-
-    st.caption(f"Run ID: `{run_id}`")
-    st.divider()
-
-    _render_trainer_history()
+    _render_review(review, tc["expected_output"], tc, nav_mode, run_id, case_id)

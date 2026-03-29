@@ -394,6 +394,7 @@ def evaluate_trainer_answer(user_output: dict, expected_output: dict) -> dict:
         "root_cause_label":           ROOT_CAUSE_LABELS.get(root_cause, root_cause),
         "review_summary":             summary,
         "coach_message":              coach_message,
+        "combined_summary":           None,   # заполняется в services после note_review
         "what_was_good":             _build_what_was_good(
             correct_mode, correct_cdd, correct_reason, correct_decisive, correct_trace,
             user_output, expected_output,
@@ -404,7 +405,7 @@ def evaluate_trainer_answer(user_output: dict, expected_output: dict) -> dict:
         ),
         "what_to_recheck":           what_to_recheck,
         "score":                     score,
-        "note_score":                None,   # заполняется при наличии decision_note
+        "note_score":                None,
         "note_review":               None,
     }
 

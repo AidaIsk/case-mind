@@ -105,6 +105,41 @@ def get_trainer_case(case_id: str) -> dict | None:
     return get_trainer_case_by_id(case_id)
 
 
+def _build_combined_summary(score: int, note_score: int | None, root_cause: str, note_quality: str | None) -> str:
+    """
+    Одна строка, объединяющая качество structured decision и decision note.
+    Вызывается после того как известны оба score.
+    """
+    has_note = note_score is not None
+
+    if score >= 85 and (not has_note or note_score >= 75):
+        return "Структурная логика и аналитическая записка в целом согласованы."
+
+    if score >= 85 and has_note and note_score <= 65:
+        return "Ты лучше определяешь решение, чем формулируешь аналитическую записку."
+
+    if has_note and note_score >= 75 and score <= 55:
+        return "Записка звучит лучше, чем структурная логика решения — проработай основы CDD/EDD."
+
+    if root_cause in ("OVER_REJECT", "UNDER_REJECT"):
+        base = "Основная проблема — неверный режим решения"
+        if has_note and note_quality == "weak":
+            return f"{base} и слабая аргументация в записке."
+        return f"{base}."
+
+    if root_cause in ("WEAK_DECISIVE_FACTOR", "WEAK_SIGNAL_TRACE", "WEAK_RATIONALE"):
+        if has_note and note_score and note_score >= 70:
+            return "Решение выбрано верно, но структурное обоснование пока слабее записки."
+        return "Решение выбрано верно, но аналитическая записка и обоснование требуют доработки."
+
+    if score >= 60:
+        if has_note and note_score and note_score < 50:
+            return "Решение выбрано верно, но аналитическая записка пока слабее structured-части."
+        return "Частичное совпадение с эталоном — есть над чем поработать."
+
+    return "Существенное расхождение с эталоном. Рекомендуется повторить теорию по теме кейса."
+
+
 def review_trainer_case(user_output: dict, expected_output: dict) -> dict:
     """Сравнивает ответ аналитика с эталоном и возвращает review."""
     return evaluate_trainer_answer(user_output, expected_output)
@@ -118,11 +153,10 @@ def submit_trainer_run(
 ) -> tuple[dict, str]:
     """
     Оркестрирует полный цикл тренировки:
-    evaluate → evaluate_note → save → return (review, run_id).
+    evaluate → evaluate_note → build_combined_summary → save.
     """
     review = evaluate_trainer_answer(user_output, expected_output)
 
-    # Оцениваем Decision Note если она предоставлена
     if decision_note.strip():
         note_review = evaluate_decision_note(decision_note, user_output, expected_output)
         review["note_score"]  = note_review["note_score"]
@@ -130,6 +164,14 @@ def submit_trainer_run(
     else:
         review["note_score"]  = None
         review["note_review"] = None
+
+    # Строим combined_summary после получения обоих score
+    review["combined_summary"] = _build_combined_summary(
+        score      = review["score"],
+        note_score = review["note_score"],
+        root_cause = review["root_cause"],
+        note_quality = (review["note_review"] or {}).get("note_quality"),
+    )
 
     run_id = save_trainer_run(
         trainer_case_id, user_output, expected_output, review, decision_note
