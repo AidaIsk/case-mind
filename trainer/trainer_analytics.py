@@ -226,3 +226,59 @@ def get_next_unfinished_trainer_case_for_today(
         return case
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# 5. Навигация по кейсам — три режима
+# ---------------------------------------------------------------------------
+
+import random as _random
+
+
+def get_next_trainer_case(
+    runs: list[dict],
+    trainer_cases: list[dict],
+    current_case_id: str | None = None,
+    mode: str = "unfinished_today",
+) -> dict | None:
+    """
+    Возвращает следующий тренировочный кейс в зависимости от режима.
+
+    Режимы:
+        "sequential"       — следующий по порядку в библиотеке
+        "random"           — случайный, желательно не текущий
+        "unfinished_today" — первый не пройденный сегодня
+
+    Возвращает None если кейсов не осталось (актуально для unfinished_today).
+    """
+    if not trainer_cases:
+        return None
+
+    if mode == "sequential":
+        return _next_sequential(trainer_cases, current_case_id)
+
+    if mode == "random":
+        return _next_random(trainer_cases, current_case_id)
+
+    # default: unfinished_today
+    return get_next_unfinished_trainer_case_for_today(runs, trainer_cases, current_case_id)
+
+
+def _next_sequential(trainer_cases: list[dict], current_case_id: str | None) -> dict:
+    """Следующий кейс по порядку; при достижении конца — возвращается к первому."""
+    if not current_case_id:
+        return trainer_cases[0]
+    ids = [c["case_id"] for c in trainer_cases]
+    try:
+        idx = ids.index(current_case_id)
+    except ValueError:
+        return trainer_cases[0]
+    next_idx = (idx + 1) % len(trainer_cases)
+    return trainer_cases[next_idx]
+
+
+def _next_random(trainer_cases: list[dict], current_case_id: str | None) -> dict:
+    """Случайный кейс, предпочтительно не текущий."""
+    candidates = [c for c in trainer_cases if c["case_id"] != current_case_id]
+    pool = candidates if candidates else trainer_cases
+    return _random.choice(pool)

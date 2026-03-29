@@ -87,7 +87,12 @@ def check_llm() -> bool:
 
 from trainer.trainer_cases import get_all_trainer_cases, get_trainer_case_by_id
 from trainer.trainer import evaluate_trainer_answer, save_trainer_run, load_trainer_runs
-from trainer.trainer_analytics import summarize_trainer_runs, get_next_unfinished_trainer_case_for_today
+from trainer.trainer_analytics import (
+    summarize_trainer_runs,
+    get_next_unfinished_trainer_case_for_today,
+    get_next_trainer_case,
+)
+from trainer.trainer_note import evaluate_decision_note
 
 
 def get_trainer_cases() -> list:
@@ -109,14 +114,26 @@ def submit_trainer_run(
     trainer_case_id: str,
     user_output: dict,
     expected_output: dict,
+    decision_note: str = "",
 ) -> tuple[dict, str]:
     """
     Оркестрирует полный цикл тренировки:
-    evaluate → save → return (review, run_id).
-    UI вызывает только эту функцию.
+    evaluate → evaluate_note → save → return (review, run_id).
     """
     review = evaluate_trainer_answer(user_output, expected_output)
-    run_id = save_trainer_run(trainer_case_id, user_output, expected_output, review)
+
+    # Оцениваем Decision Note если она предоставлена
+    if decision_note.strip():
+        note_review = evaluate_decision_note(decision_note, user_output, expected_output)
+        review["note_score"]  = note_review["note_score"]
+        review["note_review"] = note_review
+    else:
+        review["note_score"]  = None
+        review["note_review"] = None
+
+    run_id = save_trainer_run(
+        trainer_case_id, user_output, expected_output, review, decision_note
+    )
     return review, run_id
 
 
@@ -126,21 +143,28 @@ def get_trainer_runs() -> list:
 
 
 def get_trainer_progress_summary() -> dict:
-    """
-    Агрегирует прогресс аналитика по всей истории trainer runs.
-    UI вызывает только эту функцию — не trainer_analytics напрямую.
-    """
+    """Агрегирует прогресс аналитика по всей истории trainer runs."""
     runs  = load_trainer_runs()
     cases = get_all_trainer_cases()
     return summarize_trainer_runs(runs, cases)
 
 
 def get_next_unfinished_trainer_case(current_case_id: str | None = None) -> dict | None:
-    """
-    Возвращает следующий кейс, не пройденный сегодня.
-    None — если все кейсы за сегодня уже пройдены.
-    """
+    """Возвращает следующий кейс, не пройденный сегодня."""
     runs  = load_trainer_runs()
     cases = get_all_trainer_cases()
     return get_next_unfinished_trainer_case_for_today(runs, cases, current_case_id)
+
+
+def get_next_trainer_case_by_mode(
+    current_case_id: str | None = None,
+    mode: str = "unfinished_today",
+) -> dict | None:
+    """
+    Возвращает следующий кейс по выбранному режиму.
+    Режимы: sequential / random / unfinished_today.
+    """
+    runs  = load_trainer_runs()
+    cases = get_all_trainer_cases()
+    return get_next_trainer_case(runs, cases, current_case_id, mode)
 

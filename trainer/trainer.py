@@ -195,7 +195,43 @@ def _detect_root_cause(
 
 
 # ---------------------------------------------------------------------------
-# 3. Подсчёт score
+# 3.5 Coach message — человеческий фидбэк от наставника
+# ---------------------------------------------------------------------------
+
+def _build_coach_message(
+    score: int,
+    root_cause: str,
+    correct_mode: bool,
+    correct_decisive: bool,
+    correct_cdd: bool,
+) -> str:
+    if score >= 85:
+        return "Хороший разбор: решение и аргументация в целом согласованы."
+    if root_cause == "OVER_REJECT":
+        return "Ты выбрала слишком жёсткое решение — в этом кейсе пробелы ещё можно закрыть через EDD."
+    if root_cause == "UNDER_REJECT":
+        return "Решение мягче эталона: данные кейса требовали более жёсткого вывода."
+    if root_cause == "MISREAD_CDD_STATUS":
+        return "Ключевая ошибка — в статусе CDD: важно различать «незавершён» и «невозможно завершить»."
+    if root_cause in ("MISSED_SOF_GAP", "MISSED_UBO_BLOCKER"):
+        return "Ты пропустила критический блокер — обрати внимание на элементы CDD, которых не хватает."
+    if root_cause == "MISSED_ADVERSE_MEDIA":
+        return "Adverse media не отражён как решающий риск-сигнал — а именно он делает риск неприемлемым."
+    if root_cause in ("WEAK_DECISIVE_FACTOR",) or not correct_decisive:
+        return "Ты приняла правильное решение, но обоснование слишком общее — не выделен ключевой фактор."
+    if root_cause == "WEAK_SIGNAL_TRACE":
+        return "Логика решения верная, но signal trace не отражает основные сигналы кейса."
+    if not correct_mode:
+        return "Режим решения не совпадает с эталоном — пересмотри логику CDD для этого кейса."
+    if not correct_cdd:
+        return "Статус CDD определён неверно — это влияет на обоснование всего решения."
+    if score >= 60:
+        return "Решение в целом верное, но есть пробелы в обосновании — посмотри на детали."
+    return "Разбор требует доработки — рекомендую повторить теорию по теме этого кейса."
+
+
+# ---------------------------------------------------------------------------
+# 4. Подсчёт score
 # ---------------------------------------------------------------------------
 
 def _calculate_score(
@@ -344,15 +380,20 @@ def evaluate_trainer_answer(user_output: dict, expected_output: dict) -> dict:
     if not what_to_recheck:
         what_to_recheck.append("Повторить тему: " + expected_output.get("reject_reason_type", "CDD"))
 
+    coach_message = _build_coach_message(
+        score, root_cause, correct_mode, correct_decisive, correct_cdd,
+    )
+
     return {
-        "is_correct_decision":       correct_mode,
-        "is_correct_cdd_logic":      correct_cdd,
+        "is_correct_decision":        correct_mode,
+        "is_correct_cdd_logic":       correct_cdd,
         "is_correct_decisive_factor": correct_decisive,
-        "is_correct_signal_trace":   correct_trace,
-        "error_type":                error_type,
-        "root_cause":                root_cause,
-        "root_cause_label":          ROOT_CAUSE_LABELS.get(root_cause, root_cause),
-        "review_summary":            summary,
+        "is_correct_signal_trace":    correct_trace,
+        "error_type":                 error_type,
+        "root_cause":                 root_cause,
+        "root_cause_label":           ROOT_CAUSE_LABELS.get(root_cause, root_cause),
+        "review_summary":             summary,
+        "coach_message":              coach_message,
         "what_was_good":             _build_what_was_good(
             correct_mode, correct_cdd, correct_reason, correct_decisive, correct_trace,
             user_output, expected_output,
@@ -363,6 +404,8 @@ def evaluate_trainer_answer(user_output: dict, expected_output: dict) -> dict:
         ),
         "what_to_recheck":           what_to_recheck,
         "score":                     score,
+        "note_score":                None,   # заполняется при наличии decision_note
+        "note_review":               None,
     }
 
 
@@ -391,6 +434,7 @@ def save_trainer_run(
     user_output: dict,
     expected_output: dict,
     review: dict,
+    decision_note: str = "",
 ) -> str:
     """
     Сохраняет результат тренировочного прогона в trainer_runs.json.
@@ -401,16 +445,18 @@ def save_trainer_run(
 
     run_id = f"RUN-{str(uuid.uuid4())[:8].upper()}"
     record = {
-        "run_id":           run_id,
-        "trainer_case_id":  trainer_case_id,
-        "saved_at":         datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "score":            review["score"],
-        "error_type":       review["error_type"],
-        "root_cause":       review["root_cause"],
+        "run_id":            run_id,
+        "trainer_case_id":   trainer_case_id,
+        "saved_at":          datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "score":             review["score"],
+        "note_score":        review.get("note_score"),
+        "error_type":        review["error_type"],
+        "root_cause":        review["root_cause"],
         "is_correct_decision": review["is_correct_decision"],
-        "review":           review,
-        "user_output":      user_output,
-        "expected_output":  expected_output,
+        "review":            review,
+        "user_output":       user_output,
+        "expected_output":   expected_output,
+        "decision_note":     decision_note,
     }
 
     runs.append(record)
