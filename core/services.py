@@ -87,7 +87,7 @@ def check_llm() -> bool:
 
 from trainer.trainer_cases import get_all_trainer_cases, get_trainer_case_by_id
 from trainer.trainer import evaluate_trainer_answer, save_trainer_run, load_trainer_runs
-from trainer.trainer_analytics import summarize_trainer_runs
+from trainer.trainer_analytics import summarize_trainer_runs, get_next_unfinished_trainer_case_for_today
 
 
 def get_trainer_cases() -> list:
@@ -133,4 +133,14 @@ def get_trainer_progress_summary() -> dict:
     runs  = load_trainer_runs()
     cases = get_all_trainer_cases()
     return summarize_trainer_runs(runs, cases)
+
+
+def get_next_unfinished_trainer_case(current_case_id: str | None = None) -> dict | None:
+    """
+    Возвращает следующий кейс, не пройденный сегодня.
+    None — если все кейсы за сегодня уже пройдены.
+    """
+    runs  = load_trainer_runs()
+    cases = get_all_trainer_cases()
+    return get_next_unfinished_trainer_case_for_today(runs, cases, current_case_id)
 

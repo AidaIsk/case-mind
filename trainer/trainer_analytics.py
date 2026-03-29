@@ -25,21 +25,38 @@ _WINDOW_SIZE     = 5   # размер окна для сравнения
 
 def detect_score_trend(runs: list[dict]) -> str:
     """
-    Сравнивает средний score последних N прогонов с предыдущими N.
+    Определяет тренд score.
 
-    Возвращает:
-        "improving"  — средний score заметно вырос (>= _TREND_THRESHOLD)
-        "declining"  — средний score заметно упал
-        "stable"     — изменение в пределах порога
-        "not_enough_data" — прогонов меньше двух окон
+    Режимы по количеству прогонов:
+        0–2   → "not_enough_data"
+        3–5   → предварительный тренд ("preliminary_improving" и т.д.)
+        6+    → обычный тренд ("improving" / "declining" / "stable")
     """
-    if len(runs) < _WINDOW_SIZE * 2:
+    n = len(runs)
+    scores = [r.get("score", 0) for r in runs]
+
+    if n < 3:
         return "not_enough_data"
 
-    scores = [r.get("score", 0) for r in runs]
+    # Предварительный тренд: сравниваем первую и вторую половины
+    if n < _WINDOW_SIZE * 2:
+        mid = n // 2
+        first_half  = scores[:mid]
+        second_half = scores[mid:]
+        if not first_half or not second_half:
+            return "not_enough_data"
+        avg_first  = sum(first_half)  / len(first_half)
+        avg_second = sum(second_half) / len(second_half)
+        delta = avg_second - avg_first
+        if delta >= _TREND_THRESHOLD:
+            return "preliminary_improving"
+        if delta <= -_TREND_THRESHOLD:
+            return "preliminary_declining"
+        return "preliminary_stable"
+
+    # Полный тренд: два окна по _WINDOW_SIZE
     recent   = scores[-_WINDOW_SIZE:]
     previous = scores[-_WINDOW_SIZE * 2 : -_WINDOW_SIZE]
-
     avg_recent   = sum(recent)   / len(recent)
     avg_previous = sum(previous) / len(previous)
     delta = avg_recent - avg_previous
@@ -139,8 +156,7 @@ def summarize_trainer_runs(runs: list[dict], trainer_cases: list[dict] | None = 
             "total_runs":            0,
             "avg_score":             0.0,
             "correct_decision_rate": 0.0,
-            "score_trend":           "not_enough_data",
-            "root_cause_distribution": {},
+            "score_trend":           "not_enough_data",            "root_cause_distribution": {},
             "theme_distribution":    {},
             "weak_zone":             "Недостаточно данных для анализа.",
         }
@@ -171,3 +187,42 @@ def summarize_trainer_runs(runs: list[dict], trainer_cases: list[dict] | None = 
         "theme_distribution":    dict(theme_counts.most_common()),
         "weak_zone":             detect_trainer_weak_zone(runs, trainer_cases),
     }
+
+
+# ---------------------------------------------------------------------------
+# 4. Следующий непройденный кейс за сегодня
+# ---------------------------------------------------------------------------
+
+def get_next_unfinished_trainer_case_for_today(
+    runs: list[dict],
+    trainer_cases: list[dict],
+    current_case_id: str | None = None,
+) -> dict | None:
+    """
+    Возвращает следующий тренировочный кейс, который аналитик ещё не решал сегодня.
+
+    Логика:
+    - Смотрит сегодняшнюю дату в trainer_runs.json.
+    - Определяет case_id, уже пройденные сегодня.
+    - Выбирает первый кейс из библиотеки, не вошедший в сегодняшние прогоны.
+    - Если current_case_id задан — исключает его из кандидатов (не возвращать тот же кейс).
+    - Если все кейсы пройдены — возвращает None.
+    """
+    from datetime import date
+    today_str = date.today().strftime("%Y-%m-%d")
+
+    done_today = {
+        r.get("trainer_case_id")
+        for r in runs
+        if r.get("saved_at", "").startswith(today_str)
+    }
+
+    for case in trainer_cases:
+        cid = case["case_id"]
+        if cid in done_today:
+            continue
+        if cid == current_case_id:
+            continue
+        return case
+
+    return None
