@@ -245,7 +245,7 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
     if next_c is None and nav_en == "unfinished_today":
         st.success("✅ На сегодня все кейсы уже пройдены!")
     elif next_c:
-        if st.button(f"⏭️ Следующий: {next_c['case_id']} — {next_c['theme']}"):
+        if st.button(f"⏭️ Следующий: {next_c['case_id']} — {next_c.get('title_user', next_c['case_id'])}"):
             st.session_state["trainer_selected_case_id"] = next_c["case_id"]
             st.rerun()
 
@@ -287,8 +287,10 @@ def render_trainer_tab():
                 st.rerun()
 
     # Selectbox
-    labels = [f"{c['case_id']} — {_D_ICON.get(c['difficulty'], '⚪')} {c['difficulty'].capitalize()} — {c['theme']}"
-              for c in cases]
+    labels = [
+        f"{c['case_id']} — {c.get('title_user', c['case_id'])}"
+        for c in cases
+    ]
     ids = [c["case_id"] for c in cases]
     def_idx = 0
     if st.session_state.get("trainer_selected_case_id") in ids:
@@ -304,7 +306,7 @@ def render_trainer_tab():
         return
 
     # Описание
-    st.subheader(f"Кейс {tc['case_id']}")
+    st.subheader(f"{tc['case_id']} — {tc.get('title_user', tc['case_id'])}")
     st.info(tc.get("description_user", tc.get("description", "")))
 
     with st.expander("📋 Данные кейса", expanded=False):

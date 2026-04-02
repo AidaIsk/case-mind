@@ -1,29 +1,454 @@
 # trainer/trainer_cases.py
 #
-# description_user  — текст для аналитика. БЕЗ подсказок.
-# description_internal — служебное описание для разработчика.
+# Trainer dataset — KYC/AML кейсы по реалиям Казахстана.
+#
+# Структура каждого кейса:
+#   USER-FACING (видит пользователь):
+#     case_id, title_user, description_user, documents_provided, questions_or_conflict
+#   INTERNAL (только для review и разработчика):
+#     difficulty, scenario_type, description_internal
+#     expected_output  — эталон для deterministic review engine
+#     common_mistake, root_cause_if_wrong, legit_alternative
+#   СОВМЕСТИМОСТЬ:
+#     description_user  — используется AI Coach и историей
+#     case_data         — используется UI для отображения данных кейса
 
 TRAINER_CASES = [
 
-    {'case_id': 'TR-001', 'difficulty': 'beginner', 'theme': 'CDD Complete', 'description_user': 'Норвежская компания занимается лесозаготовкой и экспортом пиломатериалов. Запрашивает открытие расчётного счёта для расчётов с покупателями в Германии и Швеции. Предоставлены документы по структуре владения и экспортные контракты.', 'description_internal': 'Clean approve: UBO, SoF, docs — всё подтверждено. Низкий риск.', 'case_data': {'case_id': 'TR-001', 'case_type': 'Onboarding', 'client_type': 'Юридическое лицо', 'client_name': 'Nordic Timber AS', 'registration_country': 'Норвегия', 'business_activity': 'Лесозаготовка и экспорт пиломатериалов', 'beneficial_owner_identified': 'Да', 'beneficial_owner_details': 'Физическое лицо, резидент Норвегии, доля 100%', 'ultimate_controller_description': 'Ларс Эрикссон, CEO и единственный акционер', 'client_country': 'Норвегия', 'counterparty_countries': ['Германия', 'Швеция'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': 'Выручка от экспорта пиломатериалов, подтверждена контрактами', 'transaction_amount': 'EUR 450,000', 'transaction_description': 'Оплата за поставку пиломатериалов покупателю в Германии', 'supporting_documents_provided': 'Да', 'purpose_of_relationship': 'Расчёты по экспортным контрактам', 'product_or_service_description': 'Торговый счёт для экспортных расчётов', 'economic_rationale_clear': 'Понятен', 'matches_client_profile': 'Да', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Нет', 'unresolved_screening_issues': '', 'red_flags_selected': [], 'mitigating_factors_selected': ['Прозрачная структура владения', 'Подтверждённый SoF'], 'key_risk_driver': '', 'risk_manageable': 'Да', 'selected_risk_level': 'Низкий', 'recommendation': 'Одобрить', 'edd_required': 'Нет', 'decision_rationale': 'CDD завершён в полном объёме. Риск приемлем.', 'missing_information_summary': ''}, 'expected_output': {'decision_mode': 'approve', 'decision': 'Одобрить', 'edd_required': 'Нет', 'cdd_status': 'Complete', 'risk_level': 'Низкий', 'reject_reason_type': 'NONE', 'decisive_factor': 'Ключевые элементы CDD подтверждены, существенные блокирующие факторы не выявлены.', 'error_type': 'NONE', 'confidence_score': 5, 'signal_trace': [{'signal': 'UBO установлен и документально подтверждён.', 'category': 'CDD', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_DECISION', 'comment': 'Структура владения прозрачна.'}, {'signal': 'SoF подтверждён экспортными контрактами.', 'category': 'SOF', 'impact': 'HIGH', 'direction': 'SUPPORTS_DECISION', 'comment': 'Источник средств соответствует деятельности.'}, {'signal': 'Screening чистый: санкции, PEP, негативные публикации не выявлены.', 'category': 'SCREENING', 'impact': 'MEDIUM', 'direction': 'MITIGATING', 'comment': 'Отсутствие негативных факторов по всем базам.'}]}},
+    # ──────────────────────────────────────────────────────────────────────
+    # КЕЙС 1 — IT-экспорт и «семейный» холдинг
+    # ──────────────────────────────────────────────────────────────────────
+    {
+        # USER-FACING
+        "case_id":    "TR-001",
+        "title_user": "ТОО «Digital Nomad Solutions»",
+        "description_user": (
+            "ТОО «Digital Nomad Solutions» зарегистрировано в Казахстане около двух лет назад. "
+            "Учредитель и директор — гражданка РК, 22 года. "
+            "Заявленная деятельность: разработка и поддержка программного обеспечения "
+            "для ритейл-сетей в Юго-Восточной Азии.\n\n"
+            "Компания ежемесячно получает 40–60 млн тенге от сингапурской компании "
+            "по договору «лицензионного сопровождения». "
+            "Около 80% поступивших средств переводится на личный счёт директора в качестве дивидендов.\n\n"
+            "Предоставлен полный пакет учредительных документов, лицензионный договор, "
+            "акты выполненных работ и налоговая отчётность (налоговая нагрузка — около 3% от оборота). "
+            "Профессионального цифрового следа директора в IT-сфере не выявлено. "
+            "Установлено, что отец директора ранее занимал руководящую должность "
+            "в государственном органе, курирующем вопросы цифровизации.\n\n"
+            "Вопрос: какое решение корректно на текущем этапе и почему?"
+        ),
+        "documents_provided": [
+            "Учредительные документы",
+            "Лицензионный договор с сингапурской компанией",
+            "Акты выполненных работ",
+            "Налоговая отчётность",
+        ],
+        "questions_or_conflict": (
+            "Формально CDD завершён: личность UBO установлена, документы по сделке представлены. "
+            "Однако отсутствие профессионального следа директора и PEP-связь через родственника "
+            "создают риск типологии «соломенного человека»."
+        ),
 
-    {'case_id': 'TR-002', 'difficulty': 'intermediate', 'theme': 'CDD Complete', 'description_user': 'Немецкая компания занимается разработкой программного обеспечения. Плановый пересмотр отношений. UBO — гражданин Германии, является родственником депутата Бундестага. Негативных публикаций нет, SoF подтверждён лицензионными договорами.', 'description_internal': 'Approve с PEP второй линии. Ловушка: не переусердствовать с EDD.', 'case_data': {'case_id': 'TR-002', 'case_type': 'Review', 'client_type': 'Юридическое лицо', 'client_name': 'TechBerlin GmbH', 'registration_country': 'Германия', 'business_activity': 'Разработка программного обеспечения', 'beneficial_owner_identified': 'Да', 'beneficial_owner_details': 'Марк Вебер, 60%, гражданин Германии', 'ultimate_controller_description': 'Марк Вебер — CEO, родственник депутата Бундестага (PEP 2-й линии)', 'client_country': 'Германия', 'counterparty_countries': ['Австрия', 'Нидерланды'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': 'Лицензионные доходы от ПО, подтверждены договорами', 'transaction_amount': 'EUR 120,000', 'transaction_description': 'Квартальный лицензионный платёж от австрийского клиента', 'supporting_documents_provided': 'Да', 'purpose_of_relationship': 'Расчёты по лицензионным соглашениям', 'product_or_service_description': 'Транзакционный счёт', 'economic_rationale_clear': 'Понятен', 'matches_client_profile': 'Да', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Да', 'adverse_media_result': 'Нет', 'unresolved_screening_issues': '', 'red_flags_selected': [], 'mitigating_factors_selected': ['PEP второй линии, не прямой', 'SoF прозрачен', 'Adverse media отсутствует'], 'key_risk_driver': 'PEP-связь второй линии', 'risk_manageable': 'Да', 'selected_risk_level': 'Средний', 'recommendation': 'Одобрить', 'edd_required': 'Нет', 'decision_rationale': 'PEP второй линии, риск управляем. CDD завершён.', 'missing_information_summary': ''}, 'expected_output': {'decision_mode': 'approve', 'decision': 'Одобрить', 'edd_required': 'Нет', 'cdd_status': 'Complete', 'risk_level': 'Средний', 'reject_reason_type': 'NONE', 'decisive_factor': 'Ключевые элементы CDD подтверждены. PEP второй линии при отсутствии adverse media и прозрачном SoF не является блокирующим фактором.', 'error_type': 'NONE', 'confidence_score': 4, 'signal_trace': [{'signal': 'PEP второй линии выявлен, прямая связь отсутствует.', 'category': 'SCREENING', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_DECISION', 'comment': 'Риск PEP-связи снижен отсутствием прямого статуса и негативных публикаций.'}, {'signal': 'SoF подтверждён лицензионными договорами.', 'category': 'SOF', 'impact': 'HIGH', 'direction': 'SUPPORTS_DECISION', 'comment': 'Источник средств прозрачен и соответствует деятельности.'}, {'signal': 'Adverse media и санкционные совпадения не выявлены.', 'category': 'SCREENING', 'impact': 'MEDIUM', 'direction': 'MITIGATING', 'comment': 'Негативный фон по всем базам отсутствует.'}]}},
+        # INTERNAL
+        "difficulty":    "intermediate",
+        "scenario_type": "Nominee UBO / PEP Context",
+        "description_internal": (
+            "CDD_FAILURE: формально CDD завершён, но фактический контроль не может быть установлен. "
+            "Признаки nominee + PEP-родственник в профильном госоргане = straw man risk. "
+            "EDD не устранит структурный барьер."
+        ),
 
-    {'case_id': 'TR-003', 'difficulty': 'beginner', 'theme': 'SoF', 'description_user': 'Польская агрологистическая компания запрашивает открытие расчётного счёта. UBO установлен и подтверждён документально, деятельность понятна. Однако источник средств по конкретной входящей операции документально не подтверждён.', 'description_internal': 'EDD: SoF gap закрываем. UBO и docs OK.', 'case_data': {'case_id': 'TR-003', 'case_type': 'Onboarding', 'client_type': 'Юридическое лицо', 'client_name': 'AgroTrans Polska', 'registration_country': 'Польша', 'business_activity': 'Агрологистика и транспортировка зерна', 'beneficial_owner_identified': 'Да', 'beneficial_owner_details': 'Томаш Ковальски, 75%', 'ultimate_controller_description': 'Томаш Ковальски, директор и мажоритарный акционер', 'client_country': 'Польша', 'counterparty_countries': ['Украина', 'Румыния'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': '', 'transaction_amount': 'EUR 280,000', 'transaction_description': 'Оплата за транспортировку зерна', 'supporting_documents_provided': 'Да', 'purpose_of_relationship': 'Расчёты по логистическим контрактам', 'product_or_service_description': 'Расчётный счёт', 'economic_rationale_clear': 'Понятен', 'matches_client_profile': 'Да', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Нет', 'unresolved_screening_issues': '', 'red_flags_selected': [], 'mitigating_factors_selected': ['UBO установлен', 'Деятельность прозрачна'], 'key_risk_driver': 'SoF не подтверждён', 'risk_manageable': 'Да', 'selected_risk_level': 'Средний', 'recommendation': 'Эскалация', 'edd_required': 'Да', 'decision_rationale': 'SoF не подтверждён. Требуется запрос документов.', 'missing_information_summary': 'Подтверждение источника средств по операции'}, 'expected_output': {'decision_mode': 'edd', 'decision': 'Эскалация', 'edd_required': 'Да', 'cdd_status': 'Incomplete', 'risk_level': 'Средний', 'reject_reason_type': 'NONE', 'decisive_factor': 'Источник средств по операции не подтверждён.', 'error_type': 'NONE', 'confidence_score': 4, 'signal_trace': [{'signal': 'Источник средств по операции не подтверждён.', 'category': 'SOF', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_ESCALATION', 'comment': 'SoF является обязательным элементом CDD. Пробел закрываем через запрос документов.'}, {'signal': 'UBO установлен и подтверждён документально.', 'category': 'CDD', 'impact': 'MEDIUM', 'direction': 'MITIGATING', 'comment': 'Структура владения прозрачна, что снижает общий риск кейса.'}]}},
+        # СОВМЕСТИМОСТЬ с case_data для UI
+        "case_data": {
+            "case_id": "TR-001",
+            "case_type": "Onboarding",
+            "client_type": "Юридическое лицо",
+            "client_name": "Digital Nomad Solutions",
+            "registration_country": "Казахстан",
+            "business_activity": "Разработка и поддержка ПО для ритейл-сетей в ЮВА",
+            "beneficial_owner_identified": "Да",
+            "beneficial_owner_details": (
+                "Формально: гражданка РК, 22 года, 100% доли. "
+                "Фактический контроль: не установлен. "
+                "Отец — бывший руководитель госоргана цифровизации (PEP 2-й линии)."
+            ),
+            "ultimate_controller_description": (
+                "Реальный бенефициар не установлен. "
+                "Признаки номинального владения: отсутствие IT-опыта у директора, "
+                "нулевой цифровой след, PEP-контекст через родственника."
+            ),
+            "client_country": "Казахстан",
+            "counterparty_countries": ["Сингапур"],
+            "high_risk_jurisdiction_involved": "Нет",
+            "source_of_funds_summary": (
+                "Ежемесячные платежи от сингапурской компании по лицензионному договору. "
+                "80% оборота переводится директору как физлицу."
+            ),
+            "transaction_amount": "40–60 млн тенге в месяц",
+            "transaction_description": "Лицензионные платежи за поддержку ПО",
+            "supporting_documents_provided": "Да",
+            "purpose_of_relationship": "Приём лицензионных платежей",
+            "product_or_service_description": "Расчётный счёт",
+            "economic_rationale_clear": "Не понятен",
+            "matches_client_profile": "Нет",
+            "sanctions_result": "Совпадений нет",
+            "pep_result": "Да",
+            "adverse_media_result": "Нет",
+            "unresolved_screening_issues": (
+                "PEP-связь через родственника: отец — бывший руководитель госоргана цифровизации. "
+                "Признаки номинального владения не сняты."
+            ),
+            "red_flags_selected": [
+                "Отсутствие IT-опыта и цифрового следа директора",
+                "PEP-связь через родственника (госорган цифровизации)",
+                "80% оборота уходит директору как физлицу",
+                "Налоговая нагрузка 3% при высоком обороте",
+            ],
+            "mitigating_factors_selected": [
+                "Документы по сделке предоставлены",
+                "Сингапур — юрисдикция с высоким регуляторным уровнем",
+            ],
+            "key_risk_driver": (
+                "Фактический контроль не установлен: PEP-связь + "
+                "признаки номинального владения делают завершение CDD невозможным"
+            ),
+            "risk_manageable": "Нет",
+            "selected_risk_level": "Высокий",
+            "recommendation": "Отказать",
+            "edd_required": "Нет",
+            "decision_rationale": (
+                "Фактический бенефициар не может быть установлен. "
+                "EDD не устранит структурный барьер."
+            ),
+            "missing_information_summary": "",
+        },
 
-    {'case_id': 'TR-004', 'difficulty': 'intermediate', 'theme': 'CDD Complete', 'description_user': 'Эстонская IT-компания запрашивает расчётный счёт для расчётов с финским и британским заказчиками. UBO установлен, общий SoF понятен. Однако договор с финским заказчиком не представлен, описание объёма работ требует уточнения.', 'description_internal': 'EDD: два пробела (docs + economic rationale). Оба закрываемы.', 'case_data': {'case_id': 'TR-004', 'case_type': 'Onboarding', 'client_type': 'Юридическое лицо', 'client_name': 'TechBridge Solutions OÜ', 'registration_country': 'Эстония', 'business_activity': 'IT-аутсорсинг и разработка', 'beneficial_owner_identified': 'Да', 'beneficial_owner_details': 'Андрей Сааремяэ, 51%', 'ultimate_controller_description': 'Андрей Сааремяэ, CEO', 'client_country': 'Эстония', 'counterparty_countries': ['Финляндия', 'Великобритания'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': 'Доходы от IT-контрактов', 'transaction_amount': 'EUR 95,000', 'transaction_description': 'Платёж за разработку системы от финского заказчика', 'supporting_documents_provided': 'Нет', 'purpose_of_relationship': 'Расчёты по IT-контрактам', 'product_or_service_description': 'Расчётный счёт', 'economic_rationale_clear': 'Частично', 'matches_client_profile': 'Частично', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Нет', 'unresolved_screening_issues': '', 'red_flags_selected': [], 'mitigating_factors_selected': ['UBO установлен'], 'key_risk_driver': 'Документы не предоставлены, экономический смысл частично понятен', 'risk_manageable': 'Да', 'selected_risk_level': 'Средний', 'recommendation': 'Эскалация', 'edd_required': 'Да', 'decision_rationale': 'Документы отсутствуют, экономический смысл требует уточнения.', 'missing_information_summary': 'Договор с финским заказчиком, описание объёма работ'}, 'expected_output': {'decision_mode': 'edd', 'decision': 'Эскалация', 'edd_required': 'Да', 'cdd_status': 'Incomplete', 'risk_level': 'Средний', 'reject_reason_type': 'NONE', 'decisive_factor': 'Подтверждающие документы по операции не предоставлены.', 'error_type': 'NONE', 'confidence_score': 4, 'signal_trace': [{'signal': 'Подтверждающие документы по операции не предоставлены.', 'category': 'CDD', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_ESCALATION', 'comment': 'Пробел закрываем через запрос договора с заказчиком.'}, {'signal': 'Экономический смысл операции подтверждён частично.', 'category': 'ECONOMIC_RATIONALE', 'impact': 'HIGH', 'direction': 'SUPPORTS_ESCALATION', 'comment': 'Требуется уточнение объёма и роли клиента в сделке.'}, {'signal': 'UBO установлен, SoF в целом понятен.', 'category': 'CDD', 'impact': 'MEDIUM', 'direction': 'MITIGATING', 'comment': 'Базовые элементы CDD подтверждены, что снижает риск отказа.'}]}},
+        # ЭТАЛОН для review engine
+        "expected_output": {
+            "decision_mode":      "reject",
+            "decision":           "Отказать",
+            "edd_required":       "Нет",
+            "cdd_status":         "Incomplete and cannot be completed",
+            "risk_level":         "Высокий",
+            "reject_reason_type": "CDD_FAILURE",
+            "decisive_factor": (
+                "Фактический бенефициарный владелец не установлен: "
+                "совокупность признаков номинального владения и PEP-связи "
+                "делает завершение CDD невозможным."
+            ),
+            "error_type":       "NONE",
+            "confidence_score": 4,
+            "signal_trace": [
+                {
+                    "signal": "Директор не имеет профессионального опыта и цифрового следа в IT-сфере.",
+                    "category": "CDD", "impact": "DECISIVE", "direction": "SUPPORTS_REJECT",
+                    "comment": "Структурный барьер — EDD не устранит этот пробел.",
+                },
+                {
+                    "signal": "PEP-связь: отец — бывший руководитель госоргана цифровизации (профильная сфера).",
+                    "category": "SCREENING", "impact": "HIGH", "direction": "SUPPORTS_REJECT",
+                    "comment": "Прямой конфликт интересов: PEP-родственник в профильном регуляторе.",
+                },
+                {
+                    "signal": "80% оборота переводится директору как физлицу при налоговой нагрузке 3%.",
+                    "category": "ECONOMIC_RATIONALE", "impact": "HIGH", "direction": "SUPPORTS_REJECT",
+                    "comment": "Несовместимо с профилем реальной IT-компании.",
+                },
+                {
+                    "signal": "Документы по сделке предоставлены, сингапурский контрагент из регулируемой юрисдикции.",
+                    "category": "CDD", "impact": "MEDIUM", "direction": "MITIGATING",
+                    "comment": "Снижает операционный риск, но не устраняет структурный барьер по UBO.",
+                },
+            ],
+        },
+        "common_mistake": (
+            "Принять формальное наличие документов за достаточное завершение CDD "
+            "и выбрать EDD, недооценив признаки номинального владения и PEP-контекст."
+        ),
+        "root_cause_if_wrong": "MISREAD_CDD_STATUS",
+        "legit_alternative": (
+            "Молодой возраст учредителя не исключает реального владения. "
+            "PEP-связь второй линии при отсутствии adverse media могла бы быть смягчающим обстоятельством."
+        ),
+    },
 
-    {'case_id': 'TR-005', 'difficulty': 'beginner', 'theme': 'UBO', 'description_user': 'Холдинговая структура, зарегистрированная на Сейшельских островах, запрашивает открытие расчётного счёта для инвестиционной деятельности. Документы по структуре владения и бенефициарам не предоставлены. Средства поступают от аффилированной структуры в ОАЭ.', 'description_internal': 'CDD_FAILURE: UBO не установлен структурно. Все элементы CDD отсутствуют.', 'case_data': {'case_id': 'TR-005', 'case_type': 'Onboarding', 'client_type': 'Юридическое лицо', 'client_name': 'Pacifica Holdings Ltd', 'registration_country': 'Сейшельские острова', 'business_activity': 'Инвестиционный холдинг', 'beneficial_owner_identified': 'Нет', 'beneficial_owner_details': '', 'ultimate_controller_description': '', 'client_country': 'Сейшельские острова', 'counterparty_countries': ['ОАЭ', 'Гонконг'], 'high_risk_jurisdiction_involved': 'Да', 'source_of_funds_summary': '', 'transaction_amount': 'USD 1,200,000', 'transaction_description': 'Входящий перевод от аффилированной структуры', 'supporting_documents_provided': 'Нет', 'purpose_of_relationship': 'Инвестиционная деятельность', 'product_or_service_description': 'Расчётный счёт', 'economic_rationale_clear': 'Не понятен', 'matches_client_profile': 'Нет', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Нет', 'unresolved_screening_issues': '', 'red_flags_selected': ['Оффшорная структура', 'UBO не установлен'], 'mitigating_factors_selected': [], 'key_risk_driver': 'UBO не установлен, оффшорная юрисдикция', 'risk_manageable': 'Нет', 'selected_risk_level': 'Высокий', 'recommendation': 'Отказать', 'edd_required': 'Нет', 'decision_rationale': 'UBO не установлен. Завершение CDD невозможно.', 'missing_information_summary': ''}, 'expected_output': {'decision_mode': 'reject', 'decision': 'Отказать', 'edd_required': 'Нет', 'cdd_status': 'Incomplete and cannot be completed', 'risk_level': 'Высокий', 'reject_reason_type': 'CDD_FAILURE', 'decisive_factor': 'Бенефициарный владелец не установлен и не может быть подтверждён.', 'error_type': 'NONE', 'confidence_score': 5, 'signal_trace': [{'signal': 'Бенефициарный владелец не установлен и не может быть подтверждён.', 'category': 'CDD', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_REJECT', 'comment': 'EDD не устранит структурный барьер — раскрытие UBO в данной юрисдикции невозможно.'}, {'signal': 'Высокорисковая оффшорная юрисдикция задействована.', 'category': 'GEOGRAPHY', 'impact': 'HIGH', 'direction': 'SUPPORTS_REJECT', 'comment': 'Сейшельские острова и контрагенты в ОАЭ/Гонконг усиливают риск непрозрачности.'}, {'signal': 'SoF и подтверждающие документы отсутствуют.', 'category': 'SOF', 'impact': 'HIGH', 'direction': 'SUPPORTS_REJECT', 'comment': 'Совокупность дефицитов делает завершение CDD невозможным.'}]}},
+    # ──────────────────────────────────────────────────────────────────────
+    # КЕЙС 2 — Логистический хаб и платежи третьих лиц
+    # ──────────────────────────────────────────────────────────────────────
+    {
+        # USER-FACING
+        "case_id":    "TR-002",
+        "title_user": "ТОО «Steppe Transit»",
+        "description_user": (
+            "ТОО «Steppe Transit» — экспедиторская компания, работающая в МЦПС «Хоргос». "
+            "Заявленная деятельность: организация мультимодальных перевозок товаров "
+            "народного потребления из Китая в Казахстан и Россию.\n\n"
+            "Компания получает средства от российских импортёров и переводит их "
+            "китайским поставщикам. При этом оплата за товары поступает от юридических лиц "
+            "из Гонконга и ОАЭ, не указанных в транспортных документах "
+            "как отправители или получатели товаров.\n\n"
+            "CDD по клиенту формально проведён, лицензии действуют, "
+            "базовые транспортные документы представлены (CMR, железнодорожные накладные, "
+            "договоры с субподрядчиками). Счета используются в транзитном режиме "
+            "с минимальным остатком на конец дня.\n\n"
+            "Вопрос: какое решение корректно на текущем этапе и почему?"
+        ),
+        "documents_provided": [
+            "CMR и железнодорожные накладные",
+            "Договоры с субподрядчиками",
+            "Лицензии экспедитора",
+        ],
+        "questions_or_conflict": (
+            "Плательщики из Гонконга и ОАЭ не фигурируют в транспортных документах. "
+            "Связь между нерезидентами-плательщиками и торговыми контрактами не подтверждена."
+        ),
 
-    {'case_id': 'TR-006', 'difficulty': 'intermediate', 'theme': 'CDD Failure', 'description_user': 'Компания, оказывающая посреднические услуги, зарегистрирована в свободной зоне ОАЭ. Запрашивает расчётный счёт для платежей партнёрам в Пакистане и Египте. Информация о конечных бенефициарах не раскрыта, источник средств и экономический смысл операций не подтверждены.', 'description_internal': 'CDD_FAILURE: UBO + SoF + economic rationale — всё отсутствует.', 'case_data': {'case_id': 'TR-006', 'case_type': 'Onboarding', 'client_type': 'Юридическое лицо', 'client_name': 'Meridian Connect FZE', 'registration_country': 'ОАЭ (Фризона)', 'business_activity': 'Посреднические услуги', 'beneficial_owner_identified': 'Нет', 'beneficial_owner_details': '', 'ultimate_controller_description': '', 'client_country': 'ОАЭ', 'counterparty_countries': ['Пакистан', 'Египет'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': '', 'transaction_amount': 'USD 340,000', 'transaction_description': 'Посреднический платёж', 'supporting_documents_provided': 'Нет', 'purpose_of_relationship': 'Посреднические расчёты', 'product_or_service_description': 'Расчётный счёт', 'economic_rationale_clear': 'Не понятен', 'matches_client_profile': 'Нет', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Нет', 'unresolved_screening_issues': '', 'red_flags_selected': ['UBO не установлен', 'Посредническая структура'], 'mitigating_factors_selected': [], 'key_risk_driver': 'UBO неизвестен, SoF не подтверждён', 'risk_manageable': 'Нет', 'selected_risk_level': 'Высокий', 'recommendation': 'Отказать', 'edd_required': 'Нет', 'decision_rationale': 'UBO не установлен. Завершение CDD невозможно.', 'missing_information_summary': ''}, 'expected_output': {'decision_mode': 'reject', 'decision': 'Отказать', 'edd_required': 'Нет', 'cdd_status': 'Incomplete and cannot be completed', 'risk_level': 'Высокий', 'reject_reason_type': 'CDD_FAILURE', 'decisive_factor': 'Бенефициарный владелец не установлен и не может быть подтверждён.', 'error_type': 'NONE', 'confidence_score': 4, 'signal_trace': [{'signal': 'Бенефициарный владелец не установлен и не может быть подтверждён.', 'category': 'CDD', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_REJECT', 'comment': 'Критические дефициты по UBO не устранимы.'}, {'signal': 'SoF и экономический смысл операции не установлены.', 'category': 'SOF', 'impact': 'HIGH', 'direction': 'SUPPORTS_REJECT', 'comment': 'Совокупность пробелов делает завершение CDD невозможным.'}]}},
+        # INTERNAL
+        "difficulty":    "intermediate",
+        "scenario_type": "Transit Payments / SoF Gap",
+        "description_internal": (
+            "EDD: SoF не подтверждён — платежи от третьих лиц без документального обоснования. "
+            "Пробел закрываем: нужен договор цессии или иное подтверждение связи плательщика с контрактом. "
+            "Reject преждевременен: транспортная деятельность реальна, лицензии действуют."
+        ),
 
-    {'case_id': 'TR-007', 'difficulty': 'intermediate', 'theme': 'Adverse Media', 'description_user': 'Испанская компания занимается международной торговлей. UBO установлен, SoF подтверждён торговой выручкой, документы предоставлены. При проверке выявлены публикации о возможной вовлечённости в сомнительные посреднические схемы. Публикации не сняты, клиент объяснений не предоставил.', 'description_internal': 'RISK_UNACCEPTABLE: CDD завершён, adverse media не снят.', 'case_data': {'case_id': 'TR-007', 'case_type': 'Onboarding', 'client_type': 'Юридическое лицо', 'client_name': 'Eurogate Trading SL', 'registration_country': 'Испания', 'business_activity': 'Международная торговля', 'beneficial_owner_identified': 'Да', 'beneficial_owner_details': 'Хуан Мартинес, 80%', 'ultimate_controller_description': 'Хуан Мартинес, единственный директор', 'client_country': 'Испания', 'counterparty_countries': ['Марокко', 'Турция'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': 'Торговая выручка', 'transaction_amount': 'EUR 670,000', 'transaction_description': 'Платёж за партию товаров из Марокко', 'supporting_documents_provided': 'Да', 'purpose_of_relationship': 'Торговые расчёты', 'product_or_service_description': 'Расчётный счёт', 'economic_rationale_clear': 'Понятен', 'matches_client_profile': 'Да', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Есть', 'unresolved_screening_issues': 'Негативные публикации о возможной вовлечённости в сомнительные посреднические схемы не сняты', 'red_flags_selected': ['Негативные публикации'], 'mitigating_factors_selected': [], 'key_risk_driver': 'Неснятые негативные публикации', 'risk_manageable': 'Нет', 'selected_risk_level': 'Высокий', 'recommendation': 'Отказать', 'edd_required': 'Нет', 'decision_rationale': 'CDD завершён, но риск неприемлем из-за неснятых негативных публикаций.', 'missing_information_summary': ''}, 'expected_output': {'decision_mode': 'reject', 'decision': 'Отказать', 'edd_required': 'Нет', 'cdd_status': 'Complete but risk not acceptable', 'risk_level': 'Высокий', 'reject_reason_type': 'RISK_UNACCEPTABLE', 'decisive_factor': 'Негативные публикации о возможной вовлечённости в сомнительные посреднические схемы не сняты.', 'error_type': 'NONE', 'confidence_score': 4, 'signal_trace': [{'signal': 'Негативные публикации о возможной вовлечённости в сомнительные схемы не сняты.', 'category': 'SCREENING', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_REJECT', 'comment': 'Ключевой фактор отказа — неустранённый adverse media.'}, {'signal': 'CDD формально завершён: UBO и SoF подтверждены.', 'category': 'CDD', 'impact': 'MEDIUM', 'direction': 'MITIGATING', 'comment': 'Наличие документации не устраняет риск-сигнал по adverse media.'}]}},
+        "case_data": {
+            "case_id": "TR-002",
+            "case_type": "Onboarding",
+            "client_type": "Юридическое лицо",
+            "client_name": "Steppe Transit",
+            "registration_country": "Казахстан",
+            "business_activity": "Мультимодальные грузоперевозки Китай — Казахстан — Россия",
+            "beneficial_owner_identified": "Да",
+            "beneficial_owner_details": "UBO — гражданин РК, подтверждён документально",
+            "ultimate_controller_description": "UBO установлен, реальный контроль подтверждён",
+            "client_country": "Казахстан",
+            "counterparty_countries": ["Китай", "Россия", "Гонконг", "ОАЭ"],
+            "high_risk_jurisdiction_involved": "Да",
+            "source_of_funds_summary": (
+                "Платежи от российских импортёров (по контрактам) "
+                "и от юридических лиц из Гонконга и ОАЭ (назначение не подтверждено)."
+            ),
+            "transaction_amount": "Крупные транзитные суммы, минимальный остаток EOD",
+            "transaction_description": "Транзитные платежи в пользу китайских поставщиков",
+            "supporting_documents_provided": "Частично",
+            "purpose_of_relationship": "Расчёты по логистическим контрактам",
+            "product_or_service_description": "Расчётный счёт для транзитных операций",
+            "economic_rationale_clear": "Частично",
+            "matches_client_profile": "Частично",
+            "sanctions_result": "Совпадений нет",
+            "pep_result": "Нет",
+            "adverse_media_result": "Нет",
+            "unresolved_screening_issues": (
+                "Связь плательщиков из Гонконга и ОАЭ с торговыми контрактами не подтверждена документально."
+            ),
+            "red_flags_selected": [
+                "Плательщики из Гонконга и ОАЭ отсутствуют в транспортных документах",
+                "Транзитный режим счетов с минимальным EOD-остатком",
+                "Несоответствие плательщиков и сторон по контракту",
+            ],
+            "mitigating_factors_selected": [
+                "Транспортная деятельность реальна (CMR, ж/д накладные)",
+                "Лицензии экспедитора действуют",
+                "UBO клиента установлен",
+            ],
+            "key_risk_driver": "SoF не подтверждён: платежи от третьих лиц без обоснования связи с контрактом",
+            "risk_manageable": "Да",
+            "selected_risk_level": "Высокий",
+            "recommendation": "Эскалация",
+            "edd_required": "Да",
+            "decision_rationale": "SoF по платежам третьих лиц не подтверждён. Пробел закрываем через EDD.",
+            "missing_information_summary": (
+                "Договор цессии или иное подтверждение связи плательщиков-нерезидентов "
+                "из Гонконга/ОАЭ с торговыми контрактами"
+            ),
+        },
 
-    {'case_id': 'TR-008', 'difficulty': 'intermediate', 'theme': 'RISK_UNACCEPTABLE', 'description_user': 'Австрийская финтех-компания, плановый пересмотр отношений. Базовая проверка документов прошла успешно. В ходе пересмотра выявлены публикации о регуляторных нарушениях компании в другой юрисдикции. Нарушения не опровергнуты клиентом.', 'description_internal': 'RISK_UNACCEPTABLE: CDD завершён, новый adverse media при review.', 'case_data': {'case_id': 'TR-008', 'case_type': 'Review', 'client_type': 'Юридическое лицо', 'client_name': 'AlphaStream GmbH', 'registration_country': 'Австрия', 'business_activity': 'Финансовые технологии', 'beneficial_owner_identified': 'Да', 'beneficial_owner_details': 'Клаус Хофер, 55%', 'ultimate_controller_description': 'Клаус Хофер, CEO', 'client_country': 'Австрия', 'counterparty_countries': ['Чехия', 'Словакия'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': 'Доходы от финтех-сервисов', 'transaction_amount': 'EUR 210,000', 'transaction_description': 'Операционные расчёты', 'supporting_documents_provided': 'Да', 'purpose_of_relationship': 'Операционные расчёты', 'product_or_service_description': 'Расчётный счёт', 'economic_rationale_clear': 'Понятен', 'matches_client_profile': 'Да', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Есть', 'unresolved_screening_issues': 'Публикации о регуляторных нарушениях не сняты', 'red_flags_selected': ['Негативные публикации при пересмотре'], 'mitigating_factors_selected': [], 'key_risk_driver': 'Новые adverse media при плановом пересмотре', 'risk_manageable': 'Нет', 'selected_risk_level': 'Высокий', 'recommendation': 'Отказать', 'edd_required': 'Нет', 'decision_rationale': 'Негативные публикации не сняты. Риск неприемлем.', 'missing_information_summary': ''}, 'expected_output': {'decision_mode': 'reject', 'decision': 'Отказать', 'edd_required': 'Нет', 'cdd_status': 'Complete but risk not acceptable', 'risk_level': 'Высокий', 'reject_reason_type': 'RISK_UNACCEPTABLE', 'decisive_factor': 'Негативные публикации о регуляторных нарушениях, выявленные при пересмотре, не были сняты.', 'error_type': 'NONE', 'confidence_score': 4, 'signal_trace': [{'signal': 'Негативные публикации о регуляторных нарушениях выявлены при пересмотре.', 'category': 'SCREENING', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_REJECT', 'comment': 'Новый adverse media при review — ключевой риск-сигнал.'}, {'signal': 'CDD завершён: UBO, SoF и документы подтверждены.', 'category': 'CDD', 'impact': 'MEDIUM', 'direction': 'MITIGATING', 'comment': 'Завершённость CDD не снимает риск adverse media.'}]}},
+        "expected_output": {
+            "decision_mode":      "edd",
+            "decision":           "Эскалация",
+            "edd_required":       "Да",
+            "cdd_status":         "Incomplete",
+            "risk_level":         "Высокий",
+            "reject_reason_type": "NONE",
+            "decisive_factor": (
+                "Источник средств по платежам от третьих лиц (Гонконг, ОАЭ) не подтверждён: "
+                "связь плательщиков с торговыми контрактами не документирована."
+            ),
+            "error_type":       "NONE",
+            "confidence_score": 3,
+            "signal_trace": [
+                {
+                    "signal": "Плательщики из Гонконга и ОАЭ отсутствуют в транспортных документах как стороны контракта.",
+                    "category": "SOF", "impact": "DECISIVE", "direction": "SUPPORTS_ESCALATION",
+                    "comment": "SoF закрываем через запрос договора цессии или иного обоснования.",
+                },
+                {
+                    "signal": "Транзитный режим счетов с минимальным EOD-остатком.",
+                    "category": "PROFILE_MISMATCH", "impact": "HIGH", "direction": "SUPPORTS_ESCALATION",
+                    "comment": "Паттерн, характерный для транзитных схем.",
+                },
+                {
+                    "signal": "Транспортная деятельность подтверждена: CMR, ж/д накладные, лицензии.",
+                    "category": "CDD", "impact": "MEDIUM", "direction": "MITIGATING",
+                    "comment": "Реальность логистической деятельности снижает риск фиктивной операции.",
+                },
+            ],
+        },
+        "common_mistake": (
+            "Квалифицировать как Reject/CDD_FAILURE, игнорируя что транспортная деятельность реальна "
+            "и пробел по SoF закрываем через запрос документов."
+        ),
+        "root_cause_if_wrong": "OVER_REJECT",
+        "legit_alternative": (
+            "Платежи третьих лиц в логистике нередко объясняются агентскими схемами "
+            "или консолидацией расчётов через единый расчётный центр группы компаний."
+        ),
+    },
 
-    {'case_id': 'TR-009', 'difficulty': 'intermediate', 'theme': 'CDD Failure', 'description_user': 'Частный инвестиционный фонд зарегистрирован на Британских Виргинских островах. Запрашивает счёт для перевода инвестиционного капитала. Сведения о конечных бенефициарах фонда не раскрыты — представитель ссылается на конфиденциальность структуры фонда. Документы по источнику средств не предоставлены.', 'description_internal': 'CDD_FAILURE: BVI-структура делает раскрытие UBO невозможным. Ловушка: не путать с EDD.', 'case_data': {'case_id': 'TR-009', 'case_type': 'Onboarding', 'client_type': 'Юридическое лицо', 'client_name': 'Sunrise Capital Partners', 'registration_country': 'Британские Виргинские острова', 'business_activity': 'Частный инвестиционный фонд', 'beneficial_owner_identified': 'Нет', 'beneficial_owner_details': '', 'ultimate_controller_description': '', 'client_country': 'Британские Виргинские острова', 'counterparty_countries': ['Каймановы острова'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': '', 'transaction_amount': 'USD 5,000,000', 'transaction_description': 'Перевод инвестиционного капитала', 'supporting_documents_provided': 'Нет', 'purpose_of_relationship': 'Инвестиционные операции', 'product_or_service_description': 'Инвестиционный счёт', 'economic_rationale_clear': 'Не понятен', 'matches_client_profile': 'Нет', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Нет', 'unresolved_screening_issues': '', 'red_flags_selected': ['UBO не установлен', 'Оффшорная юрисдикция'], 'mitigating_factors_selected': [], 'key_risk_driver': 'UBO структурно не может быть установлен в BVI', 'risk_manageable': 'Нет', 'selected_risk_level': 'Высокий', 'recommendation': 'Отказать', 'edd_required': 'Нет', 'decision_rationale': 'Структура BVI-фонда не предполагает раскрытия UBO. CDD невозможен.', 'missing_information_summary': ''}, 'expected_output': {'decision_mode': 'reject', 'decision': 'Отказать', 'edd_required': 'Нет', 'cdd_status': 'Incomplete and cannot be completed', 'risk_level': 'Высокий', 'reject_reason_type': 'CDD_FAILURE', 'decisive_factor': 'Бенефициарный владелец не установлен и не может быть подтверждён в рамках структуры BVI-фонда.', 'error_type': 'NONE', 'confidence_score': 5, 'signal_trace': [{'signal': 'Бенефициарный владелец не установлен. Структура BVI-фонда делает раскрытие невозможным.', 'category': 'CDD', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_REJECT', 'comment': 'EDD не устранит структурный барьер.'}, {'signal': 'SoF и экономический смысл операции не установлены.', 'category': 'SOF', 'impact': 'HIGH', 'direction': 'SUPPORTS_REJECT', 'comment': 'Совокупность дефицитов подтверждает CDD_FAILURE.'}]}},
+    # ──────────────────────────────────────────────────────────────────────
+    # КЕЙС 3 — Сельхозэкспорт и возврат валютной выручки
+    # ──────────────────────────────────────────────────────────────────────
+    {
+        # USER-FACING
+        "case_id":    "TR-003",
+        "title_user": "КХ «Алтын Дан»",
+        "description_user": (
+            "Крестьянское хозяйство «Алтын Дан» занимается производством и экспортом зерновых. "
+            "Клиент запрашивает расчётный счёт для проведения экспортных операций "
+            "по поставке пшеницы и ячменя в Узбекистан и Афганистан "
+            "с получением оплаты в долларах США.\n\n"
+            "В дальнейшем клиент планирует перевод полученной выручки "
+            "на счёт своей дочерней компании в ОАЭ "
+            "в счёт оплаты аванса за импортные семена и удобрения.\n\n"
+            "Предоставлены фитосанитарные сертификаты, таможенные декларации и инвойсы на зерно. "
+            "UBO хозяйства установлен. "
+            "Дочерняя компания в ОАЭ зарегистрирована три месяца назад "
+            "по адресу массовой регистрации. "
+            "Сумма запланированного авансового платежа сопоставима с годовой выручкой хозяйства. "
+            "Подтверждений складских мощностей, персонала или деятельности ОАЭ-компании не предоставлено.\n\n"
+            "Вопрос: какое решение корректно на текущем этапе и почему?"
+        ),
+        "documents_provided": [
+            "Фитосанитарные сертификаты",
+            "Таможенные декларации",
+            "Инвойсы на зерно",
+        ],
+        "questions_or_conflict": (
+            "CDD по КХ завершён, экспортная операция подтверждена документально. "
+            "Однако авансовый платёж годовой выручки в трёхмесячную ОАЭ-структуру "
+            "без подтверждения её реальности имеет признаки capital flight."
+        ),
 
-    {'case_id': 'TR-010', 'difficulty': 'intermediate', 'theme': 'Adverse Media', 'description_user': 'Венгерская компания занимается портовой логистикой, триггерный пересмотр. CDD ранее был завершён успешно. Выявлены новые публикации о возможной причастности к операциям с участием санкционных структур.', 'description_internal': 'RISK_UNACCEPTABLE: trigger case. Ловушка: не уходить в EDD.', 'case_data': {'case_id': 'TR-010', 'case_type': 'Trigger', 'client_type': 'Юридическое лицо', 'client_name': 'Danube Port Holdings', 'registration_country': 'Венгрия', 'business_activity': 'Портовая логистика', 'beneficial_owner_identified': 'Да', 'beneficial_owner_details': 'Золтан Варга, 70%', 'ultimate_controller_description': 'Золтан Варга, CEO', 'client_country': 'Венгрия', 'counterparty_countries': ['Сербия', 'Румыния'], 'high_risk_jurisdiction_involved': 'Нет', 'source_of_funds_summary': 'Доходы от портовых операций', 'transaction_amount': 'EUR 890,000', 'transaction_description': 'Расчёты за портовые услуги', 'supporting_documents_provided': 'Да', 'purpose_of_relationship': 'Расчёты за логистические услуги', 'product_or_service_description': 'Расчётный счёт', 'economic_rationale_clear': 'Понятен', 'matches_client_profile': 'Да', 'sanctions_result': 'Совпадений нет', 'pep_result': 'Нет', 'adverse_media_result': 'Есть', 'unresolved_screening_issues': 'Новые публикации о возможной вовлечённости в санкционные схемы не сняты', 'red_flags_selected': ['Новые adverse media при триггерной проверке'], 'mitigating_factors_selected': [], 'key_risk_driver': 'Новые публикации о санкционных схемах', 'risk_manageable': 'Нет', 'selected_risk_level': 'Высокий', 'recommendation': 'Отказать', 'edd_required': 'Нет', 'decision_rationale': 'Новые публикации о санкционных схемах. Риск неприемлем.', 'missing_information_summary': ''}, 'expected_output': {'decision_mode': 'reject', 'decision': 'Отказать', 'edd_required': 'Нет', 'cdd_status': 'Complete but risk not acceptable', 'risk_level': 'Высокий', 'reject_reason_type': 'RISK_UNACCEPTABLE', 'decisive_factor': 'Новые публикации о возможной вовлечённости в санкционные схемы не сняты.', 'error_type': 'NONE', 'confidence_score': 4, 'signal_trace': [{'signal': 'Новые публикации о возможной вовлечённости в санкционные схемы не сняты.', 'category': 'SCREENING', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_REJECT', 'comment': 'Ключевой триггер для отказа: неснятый adverse media.'}, {'signal': 'CDD завершён: UBO и SoF подтверждены.', 'category': 'CDD', 'impact': 'MEDIUM', 'direction': 'MITIGATING', 'comment': 'Завершённость CDD не снимает риск adverse media.'}]}},
+        # INTERNAL
+        "difficulty":    "intermediate",
+        "scenario_type": "Capital Flight / Shell Entity",
+        "description_internal": (
+            "RISK_UNACCEPTABLE: CDD по КХ завершён. "
+            "ОАЭ-дочка: 3 месяца, адрес массовой регистрации, нет операционной реальности. "
+            "Аванс = 100% годовой выручки → экономически невозможно. "
+            "Риск неприемлем: операция лишена экономической логики при любом наборе документов."
+        ),
+
+        "case_data": {
+            "case_id": "TR-003",
+            "case_type": "Onboarding",
+            "client_type": "Физическое лицо (ИП / КХ)",
+            "client_name": "КХ Алтын Дан",
+            "registration_country": "Казахстан",
+            "business_activity": "Производство и экспорт зерновых (пшеница, ячмень)",
+            "beneficial_owner_identified": "Да",
+            "beneficial_owner_details": "Глава КХ — гражданин РК, единственный владелец, подтверждён",
+            "ultimate_controller_description": "Контроль над КХ установлен. Реальность ОАЭ-структуры не подтверждена",
+            "client_country": "Казахстан",
+            "counterparty_countries": ["Узбекистан", "Афганистан", "ОАЭ"],
+            "high_risk_jurisdiction_involved": "Да",
+            "source_of_funds_summary": (
+                "Экспортная выручка от зерна — соответствует профилю. "
+                "Плановый исходящий: аванс ОАЭ-дочке на сумму годовой выручки КХ."
+            ),
+            "transaction_amount": "Эквивалент годовой выручки хозяйства",
+            "transaction_description": "Экспортная выручка за зерно + аванс ОАЭ-компании",
+            "supporting_documents_provided": "Да",
+            "purpose_of_relationship": "Расчёты по экспорту зерна и оплата импортных материалов",
+            "product_or_service_description": "Расчётный счёт",
+            "economic_rationale_clear": "Не понятен",
+            "matches_client_profile": "Частично",
+            "sanctions_result": "Совпадений нет",
+            "pep_result": "Нет",
+            "adverse_media_result": "Нет",
+            "unresolved_screening_issues": (
+                "ОАЭ-компания (3 месяца, адрес массовой регистрации) "
+                "не подтвердила наличие складов, персонала и деятельности."
+            ),
+            "red_flags_selected": [
+                "ОАЭ-дочка зарегистрирована 3 месяца назад по адресу массовой регистрации",
+                "Аванс сопоставим с годовой выручкой КХ",
+                "Нет операционной реальности у ОАЭ-структуры",
+                "Афганистан в числе контрагентов",
+            ],
+            "mitigating_factors_selected": [
+                "UBO КХ установлен, экспортная деятельность соответствует профилю",
+                "Документы по зерну предоставлены",
+            ],
+            "key_risk_driver": "Аванс годовой выручки в трёхмесячную ОАЭ-структуру без операционной реальности",
+            "risk_manageable": "Нет",
+            "selected_risk_level": "Высокий",
+            "recommendation": "Отказать",
+            "edd_required": "Нет",
+            "decision_rationale": (
+                "Авансовый платёж годовой выручки трёхмесячной ОАЭ-компании лишён экономической логики. "
+                "Риск capital flight неприемлем."
+            ),
+            "missing_information_summary": "",
+        },
+
+        "expected_output": {
+            "decision_mode":      "reject",
+            "decision":           "Отказать",
+            "edd_required":       "Нет",
+            "cdd_status":         "Complete but risk not acceptable",
+            "risk_level":         "Высокий",
+            "reject_reason_type": "RISK_UNACCEPTABLE",
+            "decisive_factor": (
+                "Авансовый платёж на сумму годовой выручки в трёхмесячную ОАЭ-компанию "
+                "без подтверждённой деятельности несёт признаки capital flight."
+            ),
+            "error_type":       "NONE",
+            "confidence_score": 4,
+            "signal_trace": [
+                {
+                    "signal": "Аванс = годовая выручка КХ; ОАЭ-компания — 3 месяца, адрес массовой регистрации, нет деятельности.",
+                    "category": "ECONOMIC_RATIONALE", "impact": "DECISIVE", "direction": "SUPPORTS_REJECT",
+                    "comment": "Экономически невозможная операция — признак capital flight.",
+                },
+                {
+                    "signal": "Схема: выручка поступает и сразу уходит авансом в аффилированную ОАЭ-дочку.",
+                    "category": "PROFILE_MISMATCH", "impact": "HIGH", "direction": "SUPPORTS_REJECT",
+                    "comment": "Паттерн вывода капитала через аффилированную структуру.",
+                },
+                {
+                    "signal": "Афганистан в числе стран-получателей экспорта.",
+                    "category": "GEOGRAPHY", "impact": "MEDIUM", "direction": "SUPPORTS_REJECT",
+                    "comment": "Юрисдикция с высоким AML-риском усиливает общий профиль.",
+                },
+                {
+                    "signal": "Экспортная деятельность КХ соответствует профилю; документы по зерну предоставлены.",
+                    "category": "CDD", "impact": "MEDIUM", "direction": "MITIGATING",
+                    "comment": "Экспортная часть операции легитимна.",
+                },
+            ],
+        },
+        "common_mistake": (
+            "Выбрать EDD вместо отказа, полагая что запрос документов по ОАЭ-компании закроет пробел. "
+            "Проблема в том, что сама операция экономически необоснована при любом наборе документов."
+        ),
+        "root_cause_if_wrong": "UNDER_REJECT",
+        "legit_alternative": (
+            "Аванс за удобрения может быть оправдан сезонностью аграрного бизнеса. "
+            "Регистрация торговой дочки в ОАЭ — практика казахстанских агроэкспортёров."
+        ),
+    },
 
 ]
 
