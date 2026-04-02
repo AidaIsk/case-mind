@@ -448,5 +448,22 @@ def render_trainer_tab():
     with st.spinner("Анализирую ответ..."):
         review, run_id = submit_trainer_run(case_id, user_output, tc["expected_output"], decision_note=dn)
 
+    # Сохраняем review в session_state — чтобы пережить rerun при переключении режима
+    st.session_state["last_trainer_review"] = {
+        "review":          review,
+        "run_id":          run_id,
+        "case_id":         case_id,
+        "expected_output": tc["expected_output"],
+        "trainer_case":    tc,
+        "nav_mode":        nav_mode,
+    }
     st.session_state[sig_key] = ["", ""]
-    _render_review(review, tc["expected_output"], tc, nav_mode, run_id, case_id)
+
+# Показываем review: либо только что посчитанный, либо сохранённый из session_state
+_last = st.session_state.get("last_trainer_review")
+if _last and _last.get("case_id") == case_id:
+    _render_review(
+        _last["review"], _last["expected_output"],
+        _last["trainer_case"], _last["nav_mode"],
+        _last["run_id"], case_id,
+    )
