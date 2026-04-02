@@ -176,6 +176,13 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
     if review.get("coach_message"):
         st.info(f"💬 **Наставник:** {review['coach_message']}")
 
+    # AI Coach Comment — генерируется LLM поверх deterministic review
+    ai_comment = review.get("ai_coach_comment")
+    if ai_comment:
+        st.markdown("**🤖 AI Coach:**")
+        st.write(ai_comment)
+    # Если None — просто ничего не показываем, Trainer работает как раньше
+
     if combined:
         st.success(f"**Итог:** {combined}")
 

@@ -173,6 +173,21 @@ def submit_trainer_run(
         note_quality = (review["note_review"] or {}).get("note_quality"),
     )
 
+    # AI Coach Comment — изолированный слой поверх deterministic review.
+    # Не меняет score, error_type, root_cause. Если LLM недоступен — None, не падаем.
+    coach_comment = None
+    try:
+        from trainer.trainer_llm import get_coach_comment
+        trainer_case = get_trainer_case_by_id(trainer_case_id)
+        case_description = (trainer_case or {}).get(
+            "description_user",
+            (trainer_case or {}).get("description", "")
+        )
+        coach_comment = get_coach_comment(case_description, user_output, review)
+    except Exception:
+        pass
+    review["ai_coach_comment"] = coach_comment
+
     run_id = save_trainer_run(
         trainer_case_id, user_output, expected_output, review, decision_note
     )
