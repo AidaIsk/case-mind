@@ -319,14 +319,24 @@ def render_trainer_tab():
             st.write(f"**Деятельность:** {cd.get('business_activity', '—')}")
             st.write(f"**Тип кейса:** {cd.get('case_type', '—')}")
         with c2:
-            st.write(f"**UBO:** {cd.get('beneficial_owner_identified', '—')}")
-            st.write(f"**SoF:** {cd.get('source_of_funds_summary') or '❌ не указан'}")
+            st.write(f"**UBO установлен:** {cd.get('beneficial_owner_identified', '—')}")
+            sof = cd.get("source_of_funds_summary", "")
+            st.write(f"**Источник средств:** {sof if sof else 'не указан'}")
             st.write(f"**Документы:** {cd.get('supporting_documents_provided', '—')}")
-            st.write(f"**Adverse media:** {cd.get('adverse_media_result', '—')}")
-        if cd.get("red_flags_selected"):
-            st.write(f"**Red flags:** {', '.join(cd['red_flags_selected'])}")
-        if cd.get("unresolved_screening_issues"):
-            st.warning(f"**Нерешённые вопросы:** {cd['unresolved_screening_issues']}")
+            st.write(f"**Sanctions / PEP / Adverse media:** "
+                     f"{cd.get('sanctions_result','—')} / "
+                     f"{cd.get('pep_result','—')} / "
+                     f"{cd.get('adverse_media_result','—')}")
+
+        # Документы из user-facing поля — без аналитической интерпретации
+        docs = tc.get("documents_provided", [])
+        if docs:
+            st.write(f"**Предоставленные документы:** {', '.join(docs)}")
+
+        # "Дополнительные наблюдения" — только факты, без готового вывода
+        observations = tc.get("questions_or_conflict") or cd.get("unresolved_screening_issues", "")
+        if observations:
+            st.info(f"**Дополнительные наблюдения:** {observations}")
 
     st.divider()
     st.subheader("Твой ответ")
@@ -339,13 +349,22 @@ def render_trainer_tab():
         ca, cb = st.columns(2)
         with ca:
             dm_ru  = st.selectbox("Решение", list(_DM_RU.values()), key=f"dm_{case_id}")
-            cdd_ru = st.selectbox("Статус CDD", list(_CDD_RU.values()), key=f"cdd_{case_id}")
-            rr_ru  = st.selectbox("Тип отказа", list(_RR_RU.values()), key=f"rr_{case_id}")
+            cdd_ru = st.selectbox(
+                "Статус CDD", list(_CDD_RU.values()),
+                help="Помогает отличать незавершённый CDD от ситуации, где CDD действительно не может быть завершён.",
+                key=f"cdd_{case_id}",
+            )
+            risk_ru = st.selectbox(
+                "Уровень риска",
+                ["Низкий", "Средний", "Высокий"],
+                index=2,
+                key=f"risk_{case_id}",
+            )
         with cb:
             conf = st.slider(
-                "Уверенность (confidence_score)", 1, 5, 3,
-                help="Насколько ты уверена в своём решении. "
-                     "Используется для анализа переуверенности и недоуверенности.",
+                "Уверенность в решении", 1, 5, 3,
+                help="Показывает, насколько ты уверен(а) в своём решении. "
+                     "Помогает анализировать не только ошибки, но и ошибки при высокой уверенности.",
                 key=f"conf_{case_id}",
             )
             df = st.text_area(
@@ -393,7 +412,18 @@ def render_trainer_tab():
         return
 
     # Сборка user_output
-    dm = _DM_EN[dm_ru]; cdd = _CDD_EN[cdd_ru]; rr = _RR_EN[rr_ru]
+    dm  = _DM_EN[dm_ru]
+    cdd = _CDD_EN[cdd_ru]
+    # reject_reason_type выводится автоматически из decision_mode и cdd_status —
+    # пользователь не должен выбирать внутреннюю taxonomy напрямую
+    if dm == "reject":
+        if "cannot be completed" in cdd.lower():
+            rr = "CDD_FAILURE"
+        else:
+            rr = "RISK_UNACCEPTABLE"
+    else:
+        rr = "NONE"
+
     sd = {"edd": "SUPPORTS_ESCALATION", "reject": "SUPPORTS_REJECT"}.get(dm, "SUPPORTS_DECISION")
     filled = [s.strip() for s in sigs if s.strip()]
     trace  = [{"signal": t, "category": "OTHER",
@@ -406,7 +436,7 @@ def render_trainer_tab():
     user_output = {
         "decision_mode": dm, "decision": _DM_RU[dm],
         "edd_required": "Да" if dm == "edd" else "Нет",
-        "cdd_status": cdd, "risk_level": tc["case_data"].get("selected_risk_level", "Средний"),
+        "cdd_status": cdd, "risk_level": risk_ru,
         "reject_reason_type": rr, "decisive_factor": df.strip() or "—",
         "error_type": "NONE", "confidence_score": conf, "signal_trace": trace,
         "decision_summary": "", "case_overview": "", "key_risk_factors": [],
