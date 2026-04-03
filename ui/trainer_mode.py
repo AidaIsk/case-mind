@@ -409,6 +409,14 @@ def render_trainer_tab():
         st.rerun()
 
     if not submitted:
+        # Показываем сохранённый review если он есть для текущего кейса
+        _last = st.session_state.get("last_trainer_review")
+        if _last and _last.get("case_id") == case_id:
+            _render_review(
+                _last["review"], _last["expected_output"],
+                _last["trainer_case"], _last["nav_mode"],
+                _last["run_id"], case_id,
+            )
         return
 
     # Сборка user_output
@@ -459,11 +467,11 @@ def render_trainer_tab():
     }
     st.session_state[sig_key] = ["", ""]
 
-# Показываем review: либо только что посчитанный, либо сохранённый из session_state
-_last = st.session_state.get("last_trainer_review")
-if _last and _last.get("case_id") == case_id:
-    _render_review(
-        _last["review"], _last["expected_output"],
-        _last["trainer_case"], _last["nav_mode"],
-        _last["run_id"], case_id,
-    )
+    # Показываем review: либо только что посчитанный, либо сохранённый из session_state
+    _last = st.session_state.get("last_trainer_review")
+    if _last and _last.get("case_id") == case_id:
+        _render_review(
+            _last["review"], _last["expected_output"],
+            _last["trainer_case"], _last["nav_mode"],
+            _last["run_id"], case_id,
+        )
