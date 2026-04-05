@@ -167,14 +167,6 @@ def submit_trainer_run(
         review["note_score"]  = None
         review["note_review"] = None
 
-    # Строим combined_summary после получения обоих score
-    review["combined_summary"] = _build_combined_summary(
-        score      = review["score"],
-        note_score = review["note_score"],
-        root_cause = review["root_cause"],
-        note_quality = (review["note_review"] or {}).get("note_quality"),
-    )
-
     # ── Semantic review v1 — advisory only ─────────────────────────────
     # Не меняет score, root_cause, is_correct_*.
     # Возвращает None если кейс без semantic_hints или оба флага True.
@@ -186,6 +178,23 @@ def submit_trainer_run(
         decision_note             = decision_note,
         deterministic_decisive_ok = review["is_correct_decisive_factor"],
         deterministic_trace_ok    = review["is_correct_signal_trace"],
+    )
+
+    # ── Apply semantic score ──────────────────────────────────────────
+    # Deterministic base (max 70) + semantic (max 30) = итоговый score.
+    # Делается ДО combined_summary — чтобы summary видел финальный score.
+    from trainer.trainer import _apply_semantic_score
+    review["score"] = _apply_semantic_score(
+        review["score"],
+        review.get("semantic_review"),
+    )
+
+    # ── Combined summary — строится по финальному score ───────────────
+    review["combined_summary"] = _build_combined_summary(
+        score        = review["score"],
+        note_score   = review["note_score"],
+        root_cause   = review["root_cause"],
+        note_quality = (review["note_review"] or {}).get("note_quality"),
     )
 
     # ── AI Coach Comment — core/trainer_coach_prompt ──────────────────
