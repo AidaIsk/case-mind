@@ -8,6 +8,8 @@ from schemas import build_case_data
 from storage import save_case_record, load_cases, get_case
 from logic import get_cdd_status_and_system_decision
 
+from core.semantic_review import run_semantic_review
+
 
 def process_case(case_data: dict) -> dict:
     """
@@ -173,17 +175,38 @@ def submit_trainer_run(
         note_quality = (review["note_review"] or {}).get("note_quality"),
     )
 
-    # AI Coach Comment — изолированный слой поверх deterministic review.
-    # Не меняет score, error_type, root_cause. Если LLM недоступен — None, не падаем.
+    # ── AI Coach Comment — core/trainer_coach_prompt ────────────────────
+    # Заменяет trainer/trainer_llm.py → get_coach_comment().
+    # Использует COACH_SYSTEM_PROMPT + build_coach_user_prompt():
+    #   - trainer_case (typical_mistake, gold_standard, expected_output)
+    #   - Challenger View detection и framing rules (rubric v2.0)
+    # Optional: если API недоступен или упал — None, система не ломается.
     coach_comment = None
     try:
-        from trainer.trainer_llm import get_coach_comment
-        trainer_case = get_trainer_case_by_id(trainer_case_id)
-        case_description = (trainer_case or {}).get(
-            "description_user",
-            (trainer_case or {}).get("description", "")
-        )
-        coach_comment = get_coach_comment(case_description, user_output, review)
+        import os as _os
+        from openai import OpenAI as _OpenAI
+        from core.trainer_coach_prompt import COACH_SYSTEM_PROMPT, build_coach_user_prompt
+
+        _api_key = _os.getenv("OPENAI_API_KEY")
+        if _api_key:
+            _trainer_case = get_trainer_case_by_id(trainer_case_id) or {}
+            _oa = _OpenAI(api_key=_api_key)
+            _resp = _oa.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": COACH_SYSTEM_PROMPT},
+                    {"role": "user",   "content": build_coach_user_prompt(
+                        trainer_case    = _trainer_case,
+                        user_output     = user_output,
+                        expected_output = expected_output,
+                        review          = review,
+                        decision_note   = decision_note,
+                    )},
+                ],
+                max_tokens=300,
+                temperature=0.4,
+            )
+            coach_comment = _resp.choices[0].message.content.strip() or None
     except Exception:
         pass
     review["ai_coach_comment"] = coach_comment
