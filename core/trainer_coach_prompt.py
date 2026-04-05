@@ -157,6 +157,59 @@ def build_coach_user_prompt(
     else:
         lines += ["", "АНАЛИТИЧЕСКАЯ ЗАПИСКА: не заполнена."]
 
+    # ── Advisory context: semantic_hints + semantic_review ──────────────
+    # Оба источника — advisory only. Coach читает их для framing,
+    # но НЕ пересчитывает score, root_cause, is_correct.
+
+    # 1. semantic_hints из кейса (pilot: только TR-KZ-003)
+    semantic_hints = trainer_case.get("semantic_hints")
+    if semantic_hints:
+        lines += [
+            "",
+            "ADVISORY CONTEXT — SEMANTIC HINTS (для framing, не для пересчёта score):",
+            "Эти подсказки — только контекст для наставника. Deterministic verdict остаётся главным.",
+        ]
+        for sig in semantic_hints.get("focus_signals", []):
+            lines.append(f"  • {sig}")
+        warning = semantic_hints.get("coach_warning", "")
+        if warning:
+            lines.append(f"Типичная ошибка: {warning}")
+        wrong_path = semantic_hints.get("closest_wrong_path", "")
+        if wrong_path:
+            lines.append(f"Ближайший неверный путь: {wrong_path}")
+
+    # 2. semantic_review result (если запускался для этого кейса)
+    semantic_review = review.get("semantic_review")
+    if semantic_review:
+        df_match  = semantic_review.get("decisive_factor_semantic_match", "—")
+        missing   = semantic_review.get("mandatory_ideas_missing", [])
+        tone      = semantic_review.get("note_tone", "acceptable")
+        fairness  = semantic_review.get("fairness_note", "")
+        hint      = semantic_review.get("coach_hint", "")
+
+        lines += [
+            "",
+            "ADVISORY CONTEXT — SEMANTIC REVIEW v1 (advisory only, не меняет score):",
+        ]
+        if df_match == "match":
+            lines.append(
+                "✓ Смысл decisive factor верный — аналитик уловил суть своими словами. "
+                "Не акцентируй на decisive factor как на ошибке."
+            )
+        elif df_match == "partial":
+            lines.append("~ Decisive factor частично верный — есть правильная идея, но не полностью.")
+        elif df_match == "miss":
+            lines.append("✗ Decisive factor не попадает в суть кейса.")
+
+        if missing:
+            lines.append(f"Пропущенные ключевые идеи: {'; '.join(missing)}")
+        if tone == "accusatory":
+            lines.append("⚠ В Decision Note выявлен обвинительный тон.")
+        if fairness:
+            lines.append(f"Fairness note: {fairness}")
+        if hint:
+            lines.append(f"Coaching hint: {hint}")
+
     lines += [
         "",
         "Дай coaching-комментарий (2–4 предложения) согласно правилам из system prompt.",

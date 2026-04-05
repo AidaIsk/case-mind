@@ -175,11 +175,22 @@ def submit_trainer_run(
         note_quality = (review["note_review"] or {}).get("note_quality"),
     )
 
-    # ── AI Coach Comment — core/trainer_coach_prompt ────────────────────
-    # Заменяет trainer/trainer_llm.py → get_coach_comment().
-    # Использует COACH_SYSTEM_PROMPT + build_coach_user_prompt():
-    #   - trainer_case (typical_mistake, gold_standard, expected_output)
-    #   - Challenger View detection и framing rules (rubric v2.0)
+    # ── Semantic review v1 — advisory only ─────────────────────────────
+    # Не меняет score, root_cause, is_correct_*.
+    # Возвращает None если кейс без semantic_hints или оба флага True.
+    trainer_case = get_trainer_case_by_id(trainer_case_id) or {}
+    review["semantic_review"] = run_semantic_review(
+        user_output               = user_output,
+        expected_output           = expected_output,
+        trainer_case              = trainer_case,
+        decision_note             = decision_note,
+        deterministic_decisive_ok = review["is_correct_decisive_factor"],
+        deterministic_trace_ok    = review["is_correct_signal_trace"],
+    )
+
+    # ── AI Coach Comment — core/trainer_coach_prompt ──────────────────
+    # Использует COACH_SYSTEM_PROMPT + build_coach_user_prompt()
+    # с Challenger View rules, rubric v2.0, semantic advisory context.
     # Optional: если API недоступен или упал — None, система не ломается.
     coach_comment = None
     try:
@@ -189,14 +200,13 @@ def submit_trainer_run(
 
         _api_key = _os.getenv("OPENAI_API_KEY")
         if _api_key:
-            _trainer_case = get_trainer_case_by_id(trainer_case_id) or {}
             _oa = _OpenAI(api_key=_api_key)
             _resp = _oa.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": COACH_SYSTEM_PROMPT},
                     {"role": "user",   "content": build_coach_user_prompt(
-                        trainer_case    = _trainer_case,
+                        trainer_case    = trainer_case,
                         user_output     = user_output,
                         expected_output = expected_output,
                         review          = review,
