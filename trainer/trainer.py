@@ -39,13 +39,23 @@ ROOT_CAUSE_LABELS = {
 # Scoring weights
 # ---------------------------------------------------------------------------
 
+# Deterministic score: судит только логику решения. Max = 70.
+# decisive_factor и signal_trace вынесены в semantic layer (Step 1).
+# Guiding principle: правильная логика + тот же смысл другими словами = засчитано.
 SCORE_WEIGHTS = {
-    "decision_mode":       30,
-    "cdd_status":          20,
-    "reject_reason_type":  10,
-    "decisive_factor":     15,
-    "signal_trace":        15,
-    "self_review_quality": 10,
+    "decision_mode":       30,   # бинарный — approve / edd / reject
+    "cdd_status":          20,   # бинарный — complete / incomplete / cannot be completed
+    "reject_reason_type":  10,   # бинарный — CDD_FAILURE / RISK_UNACCEPTABLE / NONE
+    "self_review_quality": 10,   # качество self-assessment аналитика
+    # decisive_factor и signal_trace убраны: они судят wording, не логику.
+    # Вместо этого используется _apply_semantic_score() ниже.
+}
+
+# Semantic score: судит смысл, не слова. Max = 30.
+# Применяется в services.py через _apply_semantic_score().
+SEMANTIC_WEIGHTS = {
+    "decisive_factor": 20,   # был 15, повышен — decisive factor важнее trace
+    "signal_trace":    10,   # был 15, понижен — trace менее критичен для смысла
 }
 
 
@@ -238,18 +248,51 @@ def _calculate_score(
     correct_mode: bool,
     correct_cdd: bool,
     correct_reason: bool,
-    correct_decisive: bool,
-    correct_trace: bool,
     correct_self_review: bool,
 ) -> int:
+    """
+    Deterministic score: только логика решения. Max = 70.
+    decisive_factor и signal_trace убраны — их судит semantic layer.
+    """
     score = 0
     if correct_mode:        score += SCORE_WEIGHTS["decision_mode"]
     if correct_cdd:         score += SCORE_WEIGHTS["cdd_status"]
     if correct_reason:      score += SCORE_WEIGHTS["reject_reason_type"]
-    if correct_decisive:    score += SCORE_WEIGHTS["decisive_factor"]
-    if correct_trace:       score += SCORE_WEIGHTS["signal_trace"]
     if correct_self_review: score += SCORE_WEIGHTS["self_review_quality"]
-    return score
+    return score   # max 70
+
+
+def _apply_semantic_score(base_score: int, semantic_result: dict | None) -> int:
+    """
+    Добавляет semantic очки к deterministic base. Итого max = 100.
+
+    Вызывается в services.py после run_semantic_review().
+    Если semantic_result = None (нет semantic_hints или нет API):
+      даём conservative default = 15 из 30 (половину).
+      Это честнее чем 0: аналитик не наказывается за отсутствие pilot-metadata.
+
+    Принцип: правильная логика + тот же смысл другими словами = засчитано.
+    """
+    if not semantic_result:
+        # Нет semantic review для кейса — conservative middle ground
+        return min(100, base_score + 15)
+
+    df_match  = semantic_result.get("decisive_factor_semantic_match", "partial")
+    trace_cov = semantic_result.get("signal_trace_semantic_coverage", "partial")
+
+    df_score = {
+        "match":   SEMANTIC_WEIGHTS["decisive_factor"],        # 20
+        "partial": SEMANTIC_WEIGHTS["decisive_factor"] // 2,  # 10
+        "miss":    0,
+    }.get(df_match, 10)
+
+    trace_score = {
+        "covered":    SEMANTIC_WEIGHTS["signal_trace"],        # 10
+        "partial":    SEMANTIC_WEIGHTS["signal_trace"] // 2,  # 5
+        "missed_key": 0,
+    }.get(trace_cov, 5)
+
+    return min(100, base_score + df_score + trace_score)
 
 
 # ---------------------------------------------------------------------------
@@ -337,9 +380,11 @@ def evaluate_trainer_answer(user_output: dict, expected_output: dict) -> dict:
         correct_mode, correct_cdd, correct_reason,
         correct_decisive, correct_trace,
     )
+    # Deterministic score (max 70): только логика решения.
+    # Semantic score (max 30) применяется позже в services.py через _apply_semantic_score().
+    # correct_decisive и correct_trace остаются — нужны для root_cause и UI diagnosis.
     score = _calculate_score(
-        correct_mode, correct_cdd, correct_reason,
-        correct_decisive, correct_trace, correct_self_review,
+        correct_mode, correct_cdd, correct_reason, correct_self_review,
     )
 
     # Определяем error_type для learning loop
