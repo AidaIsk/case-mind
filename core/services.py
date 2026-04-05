@@ -242,6 +242,46 @@ def submit_trainer_run(
         pass
     review["ai_coach_comment"] = coach_comment
 
+    # ── AI Mentor Layer ───────────────────────────────────────────────
+    # Возвращает structured JSON: mentor_summary, what_you_got_right,
+    # main_gap, why_it_matters, stronger_decisive_factor,
+    # short_reference_note, next_step.
+    # Не меняет verdict, score, root_cause. Optional — None если нет API.
+    mentor_output = None
+    try:
+        import os as _os2, json as _json
+        from openai import OpenAI as _OpenAI2
+        from core.trainer_coach_prompt import MENTOR_SYSTEM_PROMPT, build_mentor_prompt
+
+        _api_key2 = _os2.getenv("OPENAI_API_KEY")
+        if _api_key2:
+            _oa2 = _OpenAI2(api_key=_api_key2)
+            _resp2 = _oa2.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": MENTOR_SYSTEM_PROMPT},
+                    {"role": "user",   "content": build_mentor_prompt(
+                        trainer_case    = trainer_case,
+                        user_output     = user_output,
+                        expected_output = expected_output,
+                        review          = review,
+                        decision_note   = decision_note,
+                    )},
+                ],
+                max_tokens=800,
+                temperature=0.35,
+            )
+            raw = _resp2.choices[0].message.content.strip()
+            # Убираем markdown-обёртку если модель её добавила
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            mentor_output = _json.loads(raw.strip())
+    except Exception:
+        pass
+    review["ai_mentor"] = mentor_output
+
     run_id = save_trainer_run(
         trainer_case_id, user_output, expected_output, review, decision_note
     )

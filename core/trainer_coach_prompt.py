@@ -157,59 +157,6 @@ def build_coach_user_prompt(
     else:
         lines += ["", "АНАЛИТИЧЕСКАЯ ЗАПИСКА: не заполнена."]
 
-    # ── Advisory context: semantic_hints + semantic_review ──────────────
-    # Оба источника — advisory only. Coach читает их для framing,
-    # но НЕ пересчитывает score, root_cause, is_correct.
-
-    # 1. semantic_hints из кейса (pilot: только TR-KZ-003)
-    semantic_hints = trainer_case.get("semantic_hints")
-    if semantic_hints:
-        lines += [
-            "",
-            "ADVISORY CONTEXT — SEMANTIC HINTS (для framing, не для пересчёта score):",
-            "Эти подсказки — только контекст для наставника. Deterministic verdict остаётся главным.",
-        ]
-        for sig in semantic_hints.get("focus_signals", []):
-            lines.append(f"  • {sig}")
-        warning = semantic_hints.get("coach_warning", "")
-        if warning:
-            lines.append(f"Типичная ошибка: {warning}")
-        wrong_path = semantic_hints.get("closest_wrong_path", "")
-        if wrong_path:
-            lines.append(f"Ближайший неверный путь: {wrong_path}")
-
-    # 2. semantic_review result (если запускался для этого кейса)
-    semantic_review = review.get("semantic_review")
-    if semantic_review:
-        df_match  = semantic_review.get("decisive_factor_semantic_match", "—")
-        missing   = semantic_review.get("mandatory_ideas_missing", [])
-        tone      = semantic_review.get("note_tone", "acceptable")
-        fairness  = semantic_review.get("fairness_note", "")
-        hint      = semantic_review.get("coach_hint", "")
-
-        lines += [
-            "",
-            "ADVISORY CONTEXT — SEMANTIC REVIEW v1 (advisory only, не меняет score):",
-        ]
-        if df_match == "match":
-            lines.append(
-                "✓ Смысл decisive factor верный — аналитик уловил суть своими словами. "
-                "Не акцентируй на decisive factor как на ошибке."
-            )
-        elif df_match == "partial":
-            lines.append("~ Decisive factor частично верный — есть правильная идея, но не полностью.")
-        elif df_match == "miss":
-            lines.append("✗ Decisive factor не попадает в суть кейса.")
-
-        if missing:
-            lines.append(f"Пропущенные ключевые идеи: {'; '.join(missing)}")
-        if tone == "accusatory":
-            lines.append("⚠ В Decision Note выявлен обвинительный тон.")
-        if fairness:
-            lines.append(f"Fairness note: {fairness}")
-        if hint:
-            lines.append(f"Coaching hint: {hint}")
-
     lines += [
         "",
         "Дай coaching-комментарий (2–4 предложения) согласно правилам из system prompt.",
@@ -242,3 +189,172 @@ def _count_real_signals(signal_trace: list) -> int:
         and "не указан" not in s.get("signal", "").lower()
         and "автоматически добавлен" not in s.get("comment", "").lower()
     )
+
+
+# ===========================================================================
+# AI Mentor Layer
+# ===========================================================================
+#
+# Отличие от AI Coach:
+#   Coach  — комментирует что было не так (2-4 предложения)
+#   Mentor — объясняет как думать лучше + даёт stronger examples
+#
+# Возвращает структурированный JSON. UI рендерит каждое поле отдельно.
+# Deterministic verdict, score, root_cause — не трогает.
+
+MENTOR_SYSTEM_PROMPT = """
+Ты — AI Mentor в системе CaseMind для обучения KYC/AML-аналитиков.
+
+Твоя роль — senior reviewer который объясняет джуну как думать лучше.
+НЕ судья. НЕ scoring engine. НЕ rubric dump.
+
+Что ты делаешь:
+- интерпретируешь результат как наставник
+- объясняешь где логика верная, где слабая и почему это важно
+- генерируешь более сильную формулировку decisive factor
+- пишешь пример короткой рабочей Decision Note
+
+Жёсткие ограничения:
+- НЕ меняешь decision_mode (approve / edd / reject)
+- НЕ меняешь cdd_status
+- НЕ меняешь reject_reason_type
+- НЕ пересчитываешь score
+- НЕ выдумываешь факты которых нет в кейсе
+- НЕ делаешь из короткой задачи длинное эссе
+
+Тон: уважительный, ясный, не обвинительный, не канцелярский.
+Язык: русский. Допустимы compliance-термины: CDD, EDD, UBO, SoF, PEP, decisive factor.
+
+Верни ТОЛЬКО валидный JSON без markdown-обёртки:
+{
+  "mentor_summary": "2-3 предложения: человеческий разбор — что верно, где пробел",
+  "what_you_got_right": ["конкретная сильная сторона 1", "конкретная сильная сторона 2"],
+  "main_gap": "один главный gap — максимально конкретно",
+  "why_it_matters": "почему именно этот gap важен для compliance reasoning",
+  "stronger_decisive_factor": "переформулированный decisive factor — точнее и защищаемее",
+  "short_reference_note": "пример короткой рабочей Decision Note (3-5 предложений)",
+  "next_step": "одно конкретное действие для следующего кейса"
+}
+
+Правила генерации stronger_decisive_factor:
+- одна главная мысль, не список
+- конкретный факт из кейса, не общий вывод
+- согласован с decision_mode из deterministic verdict
+- если аналитик был близко к верному — улучши формулировку, не переписывай
+
+Правила генерации short_reference_note:
+- 3-5 предложений, не больше
+- структура: клиент → что установлено → вывод → решение
+- нейтральный тон, без обвинений
+- Challenger View одной фразой если уместно
+- только факты из кейса, без домыслов
+""".strip()
+
+
+def build_mentor_prompt(
+    trainer_case:    dict,
+    user_output:     dict,
+    expected_output: dict,
+    review:          dict,
+    decision_note:   str,
+) -> str:
+    """
+    Строит prompt для AI Mentor.
+
+    Использует:
+    - trainer_case: описание кейса, typical_mistake, gold_standard
+    - user_output: ответ аналитика
+    - expected_output: эталонный verdict
+    - review: deterministic + semantic + note results
+    - decision_note: текст записки аналитика
+
+    Не пересказывает rubric — интерпретирует результат как наставник.
+    """
+    score      = review.get("score", 0)
+    root_cause = review.get("root_cause", "NONE")
+    is_correct = review.get("is_correct_decision", False)
+    note_score = review.get("note_score")
+    df_match   = review.get("decisive_factor_semantic_match", "partial")
+
+    # Compact verdict snapshot
+    verdict = {
+        "decision_mode":      expected_output.get("decision_mode"),
+        "cdd_status":         expected_output.get("cdd_status"),
+        "reject_reason_type": expected_output.get("reject_reason_type"),
+    }
+
+    # What analyst said
+    analyst = {
+        "decision_mode":      user_output.get("decision_mode"),
+        "cdd_status":         user_output.get("cdd_status"),
+        "decisive_factor":    (user_output.get("decisive_factor") or "")[:200],
+        "signals_count":      _count_real_signals(user_output.get("signal_trace", [])),
+    }
+
+    # Semantic advisory context
+    sem = review.get("semantic_review") or {}
+    sem_block = ""
+    if sem:
+        missing = sem.get("mandatory_ideas_missing", [])
+        hint    = sem.get("coach_hint", "")
+        sem_block = (
+            f"\nSEMANTIC ADVISORY (для контекста):\n"
+            f"decisive_factor_match: {df_match}\n"
+            + (f"Пропущенные идеи: {'; '.join(missing)}\n" if missing else "")
+            + (f"Hint: {hint}\n" if hint else "")
+        )
+
+    # Note advisory context
+    note_criteria = (review.get("note_review") or {}).get("note_criteria", {})
+    note_block = ""
+    if note_criteria:
+        weak = [k for k, v in note_criteria.items() if not v]
+        note_block = (
+            f"\nNOTE REVIEW (для контекста):\n"
+            f"note_score: {note_score}\n"
+            + (f"Слабые критерии: {', '.join(weak)}\n" if weak else "Все критерии OK\n")
+        )
+
+    # Decision note preview
+    note_preview = ""
+    if decision_note and decision_note.strip():
+        preview = decision_note.strip()[:400]
+        if len(decision_note.strip()) > 400:
+            preview += "…"
+        note_preview = f"\nАНАЛИТИЧЕСКАЯ ЗАПИСКА АНАЛИТИКА:\n{preview}"
+    else:
+        note_preview = "\nАНАЛИТИЧЕСКАЯ ЗАПИСКА: не заполнена."
+
+    # Case context
+    case_desc       = trainer_case.get("description_user", "")[:300]
+    typical_mistake = trainer_case.get("typical_mistake") or trainer_case.get("common_mistake", "—")
+    gold_standard   = trainer_case.get("gold_standard") or trainer_case.get("rationale_gold_standard", "—")
+    expected_df     = (expected_output.get("decisive_factor") or "")[:200]
+
+    lines = [
+        "КОНТЕКСТ КЕЙСА:",
+        f"Описание: {case_desc}",
+        f"Типичная ошибка: {typical_mistake}",
+        f"Эталонный decisive factor: {expected_df}",
+        "",
+        "DETERMINISTIC VERDICT (ground truth — не меняй):",
+        json.dumps(verdict, ensure_ascii=False),
+        "",
+        f"ОТВЕТ АНАЛИТИКА:",
+        json.dumps(analyst, ensure_ascii=False),
+        "",
+        f"SCORE: {score}/100  |  ROOT_CAUSE: {root_cause}  |  CORRECT: {is_correct}",
+        f"DF_SEMANTIC_MATCH: {df_match}",
+        sem_block,
+        note_block,
+        note_preview,
+        "",
+        f"GOLD STANDARD RATIONALE (ориентир для shorter_reference_note):",
+        gold_standard[:400],
+        "",
+        "Сгенерируй mentor response в JSON формате согласно system prompt.",
+        "stronger_decisive_factor должен быть согласован с verdict['decision_mode'].",
+        "short_reference_note пиши только на основе фактов из описания кейса.",
+    ]
+
+    return "\n".join(lines)
