@@ -183,11 +183,23 @@ def submit_trainer_run(
     # ── Apply semantic score ──────────────────────────────────────────
     # Deterministic base (max 70) + semantic (max 30) = итоговый score.
     # Делается ДО combined_summary — чтобы summary видел финальный score.
-    from trainer.trainer import _apply_semantic_score
+    from trainer.trainer import _apply_semantic_score, _score_decisive_factor
     review["score"] = _apply_semantic_score(
         review["score"],
         review.get("semantic_review"),
     )
+
+    # ── decisive_factor_semantic_match — явный semantic result ────────
+    # Приоритет 1: LLM semantic review (если запускался для этого кейса)
+    # Приоритет 2: deterministic sanity-check как fallback
+    # is_correct_decisive_factor остаётся булевым — backward compat.
+    _sr = review.get("semantic_review")
+    if _sr and "decisive_factor_semantic_match" in _sr:
+        review["decisive_factor_semantic_match"] = _sr["decisive_factor_semantic_match"]
+    else:
+        review["decisive_factor_semantic_match"] = _score_decisive_factor(
+            user_output, expected_output,
+        )
 
     # ── Combined summary — строится по финальному score ───────────────
     review["combined_summary"] = _build_combined_summary(

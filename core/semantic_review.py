@@ -61,9 +61,18 @@ def _build_prompt(
     expected_decisive: str,
     semantic_hints:    dict,
     decision_mode:     str,
+    semantic_schema:   dict | None = None,
 ) -> str:
-    mandatory  = semantic_hints.get("mandatory_ideas", [])
-    supporting = semantic_hints.get("supporting_ideas", [])
+    # Берём mandatory/forbidden из semantic_schema (Step 2) если есть,
+    # иначе fallback на legacy semantic_hints
+    if semantic_schema:
+        mandatory  = semantic_schema.get("mandatory_ideas", [])
+        forbidden  = semantic_schema.get("forbidden_ideas", [])
+        supporting = []
+    else:
+        mandatory  = semantic_hints.get("mandatory_ideas", [])
+        forbidden  = []
+        supporting = semantic_hints.get("supporting_ideas", [])
 
     clean_signals = [
         s for s in user_signals
@@ -72,13 +81,19 @@ def _build_prompt(
         and "автоматически" not in s.lower()
     ]
 
+    forbidden_block = (
+        f"- Запрещённые идеи (forbidden_ideas — их наличие = miss): "
+        f"{json.dumps(forbidden, ensure_ascii=False)}\n"
+        if forbidden else ""
+    )
+
     return f"""
 КОНТЕКСТ КЕЙСА:
 - Режим решения (уже проверен): {decision_mode}
-- Эталонный decisive factor: {expected_decisive}
+- Эталонный decisive factor (ориентир, не для exact match): {expected_decisive}
 - Обязательные идеи (mandatory_ideas): {json.dumps(mandatory, ensure_ascii=False)}
 - Поддерживающие идеи (supporting_ideas): {json.dumps(supporting, ensure_ascii=False)}
-
+{forbidden_block}
 ОТВЕТ АНАЛИТИКА:
 - Decisive factor: {user_decisive or "(не заполнен)"}
 - Сигналы: {json.dumps(clean_signals, ensure_ascii=False)}
@@ -91,14 +106,15 @@ def _build_prompt(
   "mandatory_ideas_missing": ["идеи из mandatory_ideas, которых нет"],
   "signal_trace_semantic_coverage": "covered" | "partial" | "missed_key",
   "note_tone": "professional" | "acceptable" | "accusatory",
-  "fairness_note": "одно предложение для Coach: верно ли аналитик понял суть, независимо от формулировки",
+  "fairness_note": "одно предложение для Coach: верно ли аналитик понял суть независимо от формулировки",
   "coach_hint": "одно предложение с конкретной подсказкой — что улучшить в аргументации"
 }}
 
 Логика decisive_factor_semantic_match:
-- "match"   — аналитик уловил ту же ключевую идею, пусть другими словами
-- "partial" — часть идеи есть, но не вся
-- "miss"    — формулировка далека от сути кейса
+- "match"   — аналитик уловил обязательные идеи своими словами
+- "partial" — часть обязательных идей есть, но не все
+- "miss"    — обязательные идеи отсутствуют, или присутствует forbidden_idea
+Принцип: правильная логика + тот же смысл другими словами = засчитано.
 """.strip()
 
 
@@ -205,12 +221,17 @@ def run_semantic_review(
     if deterministic_decisive_ok and deterministic_trace_ok:
         return None
 
-    # Guard 2: кейс должен иметь semantic_hints с непустыми mandatory_ideas
-    semantic_hints = trainer_case.get("semantic_hints")
-    if not semantic_hints:
-        return None
+    # Guard 2: кейс должен иметь semantic_hints ИЛИ semantic_schema (Step 2)
+    semantic_hints  = trainer_case.get("semantic_hints") or {}
+    semantic_schema = trainer_case.get("semantic_schema")
 
-    mandatory = semantic_hints.get("mandatory_ideas", [])
+    # Mandatory ideas: из semantic_schema (приоритет) или semantic_hints
+    if semantic_schema:
+        mandatory = semantic_schema.get("mandatory_ideas", [])
+    else:
+        mandatory = semantic_hints.get("mandatory_ideas", [])
+
+    # Нет ни schema ни hints с mandatory — semantic review не нужен
     if not mandatory:
         return None
 
@@ -227,6 +248,7 @@ def run_semantic_review(
             expected_decisive = expected_output.get("decisive_factor", ""),
             semantic_hints    = semantic_hints,
             decision_mode     = expected_output.get("decision_mode", ""),
+            semantic_schema   = semantic_schema,
         )
         raw = _call_llm(_SYSTEM_PROMPT, prompt)
         if raw is None:

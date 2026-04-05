@@ -75,23 +75,73 @@ def _compare_reject_reason_type(user: dict, expected: dict) -> bool:
     return user.get("reject_reason_type") == expected.get("reject_reason_type")
 
 
+def _score_decisive_factor(user: dict, expected: dict) -> str:
+    """
+    Возвращает "match" / "partial" / "miss" для decisive_factor.
+
+    Архитектурный принцип: этот слой — только sanity-check.
+    Он НЕ является semantic evaluator — это роль LLM в semantic_review.py.
+
+    Sanity-check ловит только очевидные проблемы:
+      - пустое поле
+      - явная несогласованность с decision_mode
+      - перечисление вместо одной мысли
+
+    Для всего остального возвращает "partial" как conservative default.
+    LLM в run_semantic_review() перезаписывает на "match"/"partial"/"miss"
+    по смыслу — без ограничений по словарю.
+
+    Принцип: правильная логика + тот же смысл другими словами = засчитано.
+    """
+    user_df = (user.get("decisive_factor") or "").strip()
+    mode    = user.get("decision_mode", "")
+
+    # ── Miss 1: поле пустое или прочерк ──────────────────────────────
+    if not user_df or user_df in ("—", "-", ""):
+        return "miss"
+
+    # ── Miss 2: слишком короткое — не может быть одной мыслью ────────
+    if len(user_df) < 15:
+        return "miss"
+
+    user_lower = user_df.lower()
+
+    # ── Miss 3: явная несогласованность с EDD ────────────────────────
+    # EDD-решение не должно ссылаться на структурный барьер
+    if mode == "edd":
+        edd_blockers = [
+            "невозможно завершить", "не может быть завершён",
+            "не устраним", "cdd не может",
+        ]
+        if any(w in user_lower for w in edd_blockers):
+            return "miss"
+
+    # ── Partial 1: reject + слова о закрываемых gap ──────────────────
+    # Reject-решение не должно описывать устранимый пробел как decisive
+    if mode == "reject":
+        closable = ["закрываем", "edd устранит", "edd закроет", "можно получить"]
+        if any(w in user_lower for w in closable):
+            return "partial"
+
+    # ── Partial 2: перечисление вместо одной мысли ───────────────────
+    if user_df.count(",") >= 3 and len(user_df) < 180:
+        return "partial"
+
+    # ── Conservative default: поле заполнено и структурно корректно ──
+    # Semantic LLM решит match vs partial точнее. Не штрафуем keyword-матчем.
+    return "partial"
+
+
 def _compare_decisive_factor(user: dict, expected: dict) -> bool:
     """
-    Нечёткое сравнение: совпадение по ключевым словам (> 4 символов).
-    Модель и аналитик формулируют по-разному, но смысл должен совпадать.
+    Обёртка для обратной совместимости.
+    match/partial → True (не штрафуем за перефразировку)
+    miss          → False
+
+    Используется для root_cause diagnosis и UI "что пропущено".
+    Не влияет на score (score идёт через _apply_semantic_score).
     """
-    user_df     = user.get("decisive_factor", "").lower()
-    expected_df = expected.get("decisive_factor", "").lower()
-
-    if not user_df or not expected_df:
-        return False
-
-    expected_words = {w for w in expected_df.split() if len(w) > 4}
-    if not expected_words:
-        return False
-
-    matches = sum(1 for w in expected_words if w in user_df)
-    return matches / len(expected_words) >= 0.4
+    return _score_decisive_factor(user, expected) in ("match", "partial")
 
 
 def _compare_signal_trace(user: dict, expected: dict) -> bool:
