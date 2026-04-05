@@ -159,60 +159,73 @@ def _render_history():
 def _render_mentor_block(review: dict) -> None:
     """
     Рендерит AI Mentor output как первый главный блок разбора.
-    Если ai_mentor = None — ничего не показывает (backward compat).
+    - mentor present → 🎓 Разбор от наставника
+    - mentor=None, not_available → мягкий caption (нет API — не ошибка)
+    - mentor=None, ошибка → caption + debug expander
+    Backward compat: старый contract (mentor_summary/...) тоже работает.
     """
     mentor = review.get("ai_mentor")
+    status = review.get("ai_mentor_status", "not_available")
+
     if not mentor or not isinstance(mentor, dict):
+        # Всегда показываем мягкий fallback
+        st.caption("ℹ️ Разбор от наставника сейчас недоступен — ниже стандартный review.")
+        # Debug expander только при ошибке (не при not_available = нет API)
+        if status not in ("not_available",):
+            _STATUS_RU = {
+                "api_error":   "Ошибка при вызове API",
+                "parse_error": "Ответ модели не удалось разобрать как JSON",
+                "missing_key": "Ответ модели не содержит ожидаемых полей",
+            }
+            with st.expander("🔧 Debug: статус наставника", expanded=False):
+                st.caption(f"Статус: `{status}` — {_STATUS_RU.get(status, status)}")
         return
 
     st.subheader("🎓 Разбор от наставника")
 
-    # Блок 1: Mentor Summary — главный текст
-    summary = mentor.get("mentor_summary", "")
-    if summary:
-        st.info(summary)
+    # ── Opening ───────────────────────────────────────────────────────
+    opening = mentor.get("opening") or mentor.get("mentor_summary", "")
+    if opening:
+        st.info(opening)
 
-    # Блок 2: Что получилось
-    rights = mentor.get("what_you_got_right", [])
-    if rights:
-        st.markdown("**✅ Что у тебя уже получилось:**")
-        for item in rights:
-            st.write(f"- {item}")
+    # ── Main focus + what to tighten ─────────────────────────────────
+    main_focus   = mentor.get("main_focus") or mentor.get("main_gap", "")
+    what_tighten = mentor.get("what_to_tighten", [])
+    if main_focus:
+        st.markdown(f"**Главное, что стоит подтянуть:** {main_focus}")
+    if what_tighten:
+        for item in what_tighten:
+            st.caption(f"• {item}")
 
-    col_gap, col_why = st.columns(2)
+    # ── Stronger version — самый ценный блок ─────────────────────────
+    sv = mentor.get("stronger_version", {})
+    if not sv:
+        df   = mentor.get("stronger_decisive_factor", "")
+        note = mentor.get("short_reference_note", "")
+        if df or note:
+            sv = {"decisive_factor": df, "short_answer": note}
+    if sv:
+        df_str   = sv.get("decisive_factor", "")
+        note_str = sv.get("short_answer", "")
+        if df_str:
+            st.markdown("**Как это сказать точнее:**")
+            st.success(df_str)
+        if note_str:
+            with st.expander("📄 Рабочий вариант короткого ответа", expanded=False):
+                st.write(note_str)
 
-    # Блок 3: Главный gap
-    gap = mentor.get("main_gap", "")
-    if gap:
-        with col_gap:
-            st.markdown("**⚠️ Главный gap:**")
-            st.write(gap)
-
-    # Блок 4: Почему это важно
-    why = mentor.get("why_it_matters", "")
+    # ── Why this works ────────────────────────────────────────────────
+    why = mentor.get("why_this_works") or mentor.get("why_it_matters", "")
     if why:
-        with col_why:
-            st.markdown("**💡 Почему это важно:**")
-            st.write(why)
+        st.caption(f"💡 {why}")
 
-    # Блок 5: Более сильная формулировка
-    stronger = mentor.get("stronger_decisive_factor", "")
-    if stronger:
-        st.markdown("**🔍 Как можно сформулировать сильнее:**")
-        st.success(stronger)
-
-    # Блок 6: Пример короткой записки — в expander
-    ref_note = mentor.get("short_reference_note", "")
-    if ref_note:
-        with st.expander("📄 Пример короткой рабочей записки", expanded=False):
-            st.write(ref_note)
-
-    # Блок 7: Следующий шаг
-    next_step = mentor.get("next_step", "")
-    if next_step:
-        st.markdown(f"**➡️ Следующий шаг:** {next_step}")
+    # ── Drill next ────────────────────────────────────────────────────
+    drill = mentor.get("drill_next") or mentor.get("next_step", "")
+    if drill:
+        st.markdown(f"**➡️ В следующем кейсе:** {drill}")
 
     st.divider()
+
 
 
 def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_mode: str, run_id: str, case_id: str):
@@ -241,15 +254,22 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
     c1.metric("Score", f"{_sicon(score)} {score} / 100")
     c2.metric("Диагноз", root)
 
-    if review.get("coach_message"):
+    has_mentor = bool(review.get("ai_mentor"))
+
+    # coach_message: показываем только если mentor недоступен
+    if review.get("coach_message") and not has_mentor:
         st.info(f"💬 **Наставник:** {review['coach_message']}")
 
-    # AI Coach Comment — генерируется LLM поверх deterministic review
+    # ai_coach_comment: если mentor есть → в expander (не конкурирует визуально)
+    #                   если mentor нет → показываем как раньше
     ai_comment = review.get("ai_coach_comment")
     if ai_comment:
-        st.markdown("**🤖 AI Coach:**")
-        st.write(ai_comment)
-    # Если None — просто ничего не показываем, Trainer работает как раньше
+        if has_mentor:
+            with st.expander("Дополнительный комментарий системы", expanded=False):
+                st.write(ai_comment)
+        else:
+            st.markdown("**🤖 AI Coach:**")
+            st.write(ai_comment)
 
     if combined:
         st.success(f"**Итог:** {combined}")
