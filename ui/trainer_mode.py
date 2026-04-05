@@ -153,9 +153,75 @@ def _render_history():
 
 # ── Результаты review ────────────────────────────────────────────────────
 
+
+# ── AI Mentor Block ───────────────────────────────────────────────────────
+
+def _render_mentor_block(review: dict) -> None:
+    """
+    Рендерит AI Mentor output как первый главный блок разбора.
+    Если ai_mentor = None — ничего не показывает (backward compat).
+    """
+    mentor = review.get("ai_mentor")
+    if not mentor or not isinstance(mentor, dict):
+        return
+
+    st.subheader("🎓 Разбор от наставника")
+
+    # Блок 1: Mentor Summary — главный текст
+    summary = mentor.get("mentor_summary", "")
+    if summary:
+        st.info(summary)
+
+    # Блок 2: Что получилось
+    rights = mentor.get("what_you_got_right", [])
+    if rights:
+        st.markdown("**✅ Что у тебя уже получилось:**")
+        for item in rights:
+            st.write(f"- {item}")
+
+    col_gap, col_why = st.columns(2)
+
+    # Блок 3: Главный gap
+    gap = mentor.get("main_gap", "")
+    if gap:
+        with col_gap:
+            st.markdown("**⚠️ Главный gap:**")
+            st.write(gap)
+
+    # Блок 4: Почему это важно
+    why = mentor.get("why_it_matters", "")
+    if why:
+        with col_why:
+            st.markdown("**💡 Почему это важно:**")
+            st.write(why)
+
+    # Блок 5: Более сильная формулировка
+    stronger = mentor.get("stronger_decisive_factor", "")
+    if stronger:
+        st.markdown("**🔍 Как можно сформулировать сильнее:**")
+        st.success(stronger)
+
+    # Блок 6: Пример короткой записки — в expander
+    ref_note = mentor.get("short_reference_note", "")
+    if ref_note:
+        with st.expander("📄 Пример короткой рабочей записки", expanded=False):
+            st.write(ref_note)
+
+    # Блок 7: Следующий шаг
+    next_step = mentor.get("next_step", "")
+    if next_step:
+        st.markdown(f"**➡️ Следующий шаг:** {next_step}")
+
+    st.divider()
+
+
 def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_mode: str, run_id: str, case_id: str):
     """Отображает результаты review — краткий или подробный режим."""
     st.divider()
+
+    # ── AI Mentor Block — показывается первым если есть ──────────────────
+    _render_mentor_block(review)
+
     st.subheader("Разбор")
 
     score    = review["score"]
