@@ -741,6 +741,7 @@ BETA_CASES = [
 # Beta whitelist — только эти case_id показываются в beta UI
 BETA_CASE_IDS = ['EASY-01', 'EASY-02', 'MED-01', 'MED-02', 'ADV-01']
 
+TRAINER_CASES = TRAINER_CASES + BETA_CASES
 
 def get_all_trainer_cases() -> list:
     return TRAINER_CASES
