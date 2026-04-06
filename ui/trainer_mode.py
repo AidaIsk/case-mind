@@ -343,14 +343,18 @@ def _render_field_review(review: dict) -> None:
             if not field_data or not isinstance(field_data, dict):
                 continue
 
-            good    = field_data.get("what_is_good", "")
-            mixed   = field_data.get("what_is_mixed", "")
-            stronger = field_data.get("stronger_version", "")
+            user_text = field_data.get("user_text", "")
+            good      = field_data.get("what_is_good", "")
+            mixed     = field_data.get("what_is_mixed", "")
+            stronger  = field_data.get("stronger_version", "")
 
-            if not any([good, mixed, stronger]):
+            if not any([user_text, good, mixed, stronger]):
                 continue
 
             st.markdown(f"**{field_label}**")
+            # user_text — показываем первым, компактно
+            if user_text and user_text != "—":
+                st.caption(f"Ты написала: _{user_text}_")
             c1, c2 = st.columns(2)
             if good:
                 c1.markdown(f"✅ {good}")

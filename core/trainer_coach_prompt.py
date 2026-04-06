@@ -457,33 +457,39 @@ FIELD_REVIEW_SYSTEM_PROMPT = """
 Верни ТОЛЬКО валидный JSON без markdown:
 {
   "main_risk": {
+    "user_text": "точный текст аналитика из поля main_risk — скопируй как есть",
     "what_is_good": "что точно верно — конкретно",
     "what_is_mixed": "что смешано или слабее — конкретно (или null если всё OK)",
     "stronger_version": "как звучало бы точнее"
   },
   "risk_reasoning": {
+    "user_text": "точный текст аналитика из поля risk_reasoning",
     "what_is_good": "...",
     "what_is_mixed": "...",
     "stronger_version": "..."
   },
   "actions": {
+    "user_text": "точный текст аналитика из поля actions",
     "what_is_good": "...",
     "what_is_mixed": "...",
     "stronger_version": "..."
   },
   "decisive_factor": {
+    "user_text": "точный текст аналитика из поля decisive_factor",
     "what_is_good": "...",
     "what_is_mixed": "...",
     "stronger_version": "..."
   },
   "challenger": {
+    "user_text": "точный текст аналитика из поля challenger",
     "what_is_good": "...",
     "what_is_mixed": "...",
     "stronger_version": "..."
   }
 }
 
-Если поле пустое или содержит только "—" — верни null для этого ключа.
+Правило user_text: скопируй текст аналитика дословно, без изменений.
+Если поле пустое или "—" — верни null для этого ключа целиком.
 """.strip()
 
 
