@@ -275,16 +275,21 @@ def _build_reference_note(
     trainer_case: dict,
     expected_output: dict,
     mentor_short_ref: str,
+    mentor_full_ref: str = "",
 ) -> str:
     """
     Детерминированно строит референсную записку.
-    Приоритет: mentor short_reference (LLM) → gold_standard → компиляция из expected_output.
-    """
-    # Приоритет 1: если Mentor уже сгенерировал short_reference — используем
+    Приоритет:
+    mentor full_reference_note → mentor short_reference → gold_standard → компиляция из expected_output.    """
+    # Приоритет 1: если Mentor уже сгенерировал full_reference_note — используем
+    if mentor_full_ref and len(mentor_full_ref) > 60:
+        return mentor_full_ref
+
+    # Приоритет 2.1: short_reference
     if mentor_short_ref and len(mentor_short_ref) > 30:
         return mentor_short_ref
 
-    # Приоритет 2: gold_standard из кейса
+    # Приоритет 2.2: gold_standard из кейса
     gold = (
         trainer_case.get("gold_standard") or
         trainer_case.get("rationale_gold_standard") or ""
@@ -510,16 +515,22 @@ def submit_trainer_run(
 
     # ── Note compare layer (teaching, no LLM) ────────────────────────────
     # user_note: детерминированная сборка из beta reasoning fields
-    # reference_note: mentor short_reference → gold_standard → compiled
-    mentor_short_ref = ""
+    # reference_note: mentor full_reference_note → short_reference → gold_standard → compiled    mentor_short_ref = ""
+    mentor_full_ref  = ""
+
     if mentor_output and isinstance(mentor_output, dict):
         nb = mentor_output.get("note_block", {}) or {}
         mentor_short_ref = nb.get("short_reference", "") or ""
+        mentor_full_ref  = nb.get("full_reference_note", "") or ""
 
     user_note_text = _build_user_note(user_output, trainer_case)
+    ref_note_text  = _build_reference_note(
+        trainer_case,
+        expected_output,
+        mentor_short_ref,
+        mentor_full_ref,
+    )
     
-    ref_note_text  = _build_reference_note(trainer_case, expected_output, mentor_short_ref)
-
     review["user_note"]      = user_note_text if user_note_text else None
     review["reference_note"] = ref_note_text  if ref_note_text  else None
 

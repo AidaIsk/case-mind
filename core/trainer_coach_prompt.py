@@ -242,7 +242,8 @@ MENTOR_SYSTEM_PROMPT = """
     "note_verdict": "strong | acceptable | weak | not_written | generated",
     "what_works": "1 предложение: что в записке уже хорошо (или null если не написана)",
     "what_to_tighten": "1 предложение: одна конкретная вещь которую усилить",
-    "short_reference": "3-4 предложения: рабочий вариант короткой записки — мышечная память"
+    "short_reference": "1-2 предложения: очень короткий рабочий вариант записки",
+    "full_reference_note": "4-6 предложений: короткая связная analyst note в рабочем профессиональном тоне"
   },
 
   "score_explanation": "1-2 предложения: почему score именно такой — без rubric, по-человечески",
@@ -262,14 +263,40 @@ MENTOR_SYSTEM_PROMPT = """
 
 ПРАВИЛА note_block:
 - если записка не заполнена И reasoning blocks пусты:
-    note_verdict = "not_written", what_works = null, what_to_tighten = null, short_reference = null
+    note_verdict = "not_written"
+    what_works = null
+    what_to_tighten = null
+    short_reference = null
+    full_reference_note = null
+
 - если записка не заполнена НО reasoning blocks есть:
     note_verdict = "generated"
-    what_works = null, what_to_tighten = null
-    short_reference = ОБЯЗАТЕЛЕН: 3-4 предложения рабочей записки на основе reasoning blocks
-- если записка заполнена: оцени как обычно (strong / acceptable / weak)
-- short_reference: только факты из кейса, нейтральный тон, без обвинений
+    what_works = null
+    what_to_tighten = null
+    short_reference = ОБЯЗАТЕЛЕН: 1-2 предложения рабочего варианта
+    full_reference_note = ОБЯЗАТЕЛЕН: 4-6 предложений, короткий связный абзац рабочей analyst note
 
+- если записка заполнена:
+    оцени как обычно (strong / acceptable / weak)
+    short_reference = короткий улучшенный вариант
+    full_reference_note = более полный сильный вариант той же записки
+
+- short_reference:
+    только факты из кейса
+    нейтральный тон
+    без обвинений
+    очень короткий формат
+
+- full_reference_note:
+    только факты из кейса
+    4-6 предложений
+    один короткий связный абзац
+    tone: professional analyst note
+    не bullet list
+    не markdown report
+    не пафосный compliance language
+    должно звучать как то, как strong analyst кратко оформил бы кейс в реальной работе
+    
 ПРАВИЛА score_explanation:
 - объясни score разговорно: "Score X потому что..."
 - НЕ перечисляй веса rubric
@@ -409,9 +436,11 @@ def build_mentor_prompt(
         gold_standard[:400],
         beta_block,
         "",
-        "Сгенерируй mentor response в JSON формате согласно system prompt.",
+                "Сгенерируй mentor response в JSON формате согласно system prompt.",
         "Если REASONING BLOCKS заполнены И записка не написана: note_verdict = generated, short_reference ОБЯЗАТЕЛЕН.",
         "short_reference строй только на фактах из кейса, нейтральный тон.",
+        "full_reference_note тоже строй только на фактах из кейса.",
+        "full_reference_note должен быть 4-6 предложений и звучать как короткая рабочая analyst note, а не как one-liner.",
     ]
 
     return "\n".join(lines)

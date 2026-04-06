@@ -426,7 +426,7 @@ def _render_notes_compare(review: dict) -> None:
 
     with c2:
         st.markdown("**Референсная записка**")
-        st.caption("Один из сильных вариантов упаковки этого кейса.")
+        st.caption("Один из сильных вариантов того, как этот кейс можно кратко оформить в рабочей записке.")
         if ref_note:
             st.success(ref_note)
         else:
