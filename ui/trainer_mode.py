@@ -158,19 +158,15 @@ def _render_history():
 
 def _render_mentor_block(review: dict) -> None:
     """
-    Рендерит AI Mentor output как первый главный блок разбора.
-    - mentor present → 🎓 Разбор от наставника
-    - mentor=None, not_available → мягкий caption (нет API — не ошибка)
-    - mentor=None, ошибка → caption + debug expander
-    Backward compat: старый contract (mentor_summary/...) тоже работает.
+    Рендерит AI Mentor как первый главный блок разбора.
+    Поддерживает новый 3-block contract и старый flat contract (backward compat).
+    ai_mentor=None → мягкий fallback.
     """
     mentor = review.get("ai_mentor")
     status = review.get("ai_mentor_status", "not_available")
 
     if not mentor or not isinstance(mentor, dict):
-        # Всегда показываем мягкий fallback
         st.caption("ℹ️ Разбор от наставника сейчас недоступен — ниже стандартный review.")
-        # Debug expander только при ошибке (не при not_available = нет API)
         if status not in ("not_available",):
             _STATUS_RU = {
                 "api_error":   "Ошибка при вызове API",
@@ -188,7 +184,94 @@ def _render_mentor_block(review: dict) -> None:
     if opening:
         st.info(opening)
 
-    # ── Main focus + what to tighten ─────────────────────────────────
+    # ── Определяем тип contract ────────────────────────────────────────
+    is_3block = "verdict_block" in mentor or "logic_block" in mentor or "note_block" in mentor
+
+    if is_3block:
+        _render_mentor_3block(mentor, review)
+    else:
+        _render_mentor_flat(mentor)
+
+    st.divider()
+
+
+def _render_mentor_3block(mentor: dict, review: dict) -> None:
+    """Рендерит новый 3-block mentor contract."""
+
+    # ── Блок 1: Вердикт ───────────────────────────────────────────────
+    vb = mentor.get("verdict_block", {})
+    if vb:
+        with st.container():
+            st.markdown("**📋 Решение**")
+            d_ok   = vb.get("decision_ok", True)
+            cdd_ok = vb.get("cdd_ok", True)
+            c1, c2 = st.columns(2)
+            c1.markdown(f"{'✅' if d_ok else '❌'} Режим решения")
+            c2.markdown(f"{'✅' if cdd_ok else '❌'} Статус CDD")
+            if vb.get("summary"):
+                st.caption(vb["summary"])
+
+    # ── Блок 2: Логика / decisive factor ──────────────────────────────
+    lb = mentor.get("logic_block", {})
+    if lb:
+        st.markdown("**🔍 Decisive factor и сигналы**")
+        df_verdict = lb.get("decisive_factor_verdict", "acceptable")
+        _DF_ICON = {"strong": "✅", "acceptable": "🟡", "weak": "🔴"}
+        icon = _DF_ICON.get(df_verdict, "🟡")
+
+        if lb.get("decisive_factor_comment"):
+            st.markdown(f"{icon} {lb['decisive_factor_comment']}")
+
+        stronger = lb.get("stronger_decisive_factor", "")
+        if stronger:
+            st.success(f"**Точнее:** {stronger}")
+
+        sig_strong = lb.get("signals_strong", [])
+        sig_weak   = lb.get("signals_weak", [])
+        if sig_strong or sig_weak:
+            c1, c2 = st.columns(2)
+            if sig_strong:
+                with c1:
+                    for s in sig_strong:
+                        st.caption(f"✅ {s}")
+            if sig_weak:
+                with c2:
+                    for s in sig_weak:
+                        st.caption(f"⚠️ {s}")
+
+    # ── Блок 3: Записка ───────────────────────────────────────────────
+    nb = mentor.get("note_block", {})
+    if nb:
+        note_verdict = nb.get("note_verdict", "not_written")
+        if note_verdict != "not_written":
+            _NV_LABEL = {"strong": "✅ Записка сильная", "acceptable": "🟡 Записка приемлемая",
+                         "weak": "🔴 Записка требует доработки"}
+            label = _NV_LABEL.get(note_verdict, "📝 Записка")
+            with st.expander(f"📝 {label}", expanded=(note_verdict == "weak")):
+                if nb.get("what_works"):
+                    st.markdown(f"✅ {nb['what_works']}")
+                if nb.get("what_to_tighten"):
+                    st.markdown(f"⚠️ {nb['what_to_tighten']}")
+                ref = nb.get("short_reference", "")
+                if ref:
+                    st.markdown("**Рабочий вариант:**")
+                    st.info(ref)
+        else:
+            st.caption("📝 Записка не была заполнена.")
+
+    # ── Score explanation ──────────────────────────────────────────────
+    score_exp = mentor.get("score_explanation", "")
+    if score_exp:
+        st.caption(f"💬 {score_exp}")
+
+    # ── Drill next ────────────────────────────────────────────────────
+    drill = mentor.get("drill_next", "")
+    if drill:
+        st.markdown(f"**➡️ В следующем кейсе:** {drill}")
+
+
+def _render_mentor_flat(mentor: dict) -> None:
+    """Рендерит старый flat contract (backward compat)."""
     main_focus   = mentor.get("main_focus") or mentor.get("main_gap", "")
     what_tighten = mentor.get("what_to_tighten", [])
     if main_focus:
@@ -196,8 +279,6 @@ def _render_mentor_block(review: dict) -> None:
     if what_tighten:
         for item in what_tighten:
             st.caption(f"• {item}")
-
-    # ── Stronger version — самый ценный блок ─────────────────────────
     sv = mentor.get("stronger_version", {})
     if not sv:
         df   = mentor.get("stronger_decisive_factor", "")
@@ -205,26 +286,18 @@ def _render_mentor_block(review: dict) -> None:
         if df or note:
             sv = {"decisive_factor": df, "short_answer": note}
     if sv:
-        df_str   = sv.get("decisive_factor", "")
-        note_str = sv.get("short_answer", "")
-        if df_str:
+        if sv.get("decisive_factor"):
             st.markdown("**Как это сказать точнее:**")
-            st.success(df_str)
-        if note_str:
-            with st.expander("📄 Рабочий вариант короткого ответа", expanded=False):
-                st.write(note_str)
-
-    # ── Why this works ────────────────────────────────────────────────
+            st.success(sv["decisive_factor"])
+        if sv.get("short_answer"):
+            with st.expander("📄 Рабочий вариант", expanded=False):
+                st.write(sv["short_answer"])
     why = mentor.get("why_this_works") or mentor.get("why_it_matters", "")
     if why:
         st.caption(f"💡 {why}")
-
-    # ── Drill next ────────────────────────────────────────────────────
     drill = mentor.get("drill_next") or mentor.get("next_step", "")
     if drill:
         st.markdown(f"**➡️ В следующем кейсе:** {drill}")
-
-    st.divider()
 
 
 
@@ -274,24 +347,6 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
     if combined:
         st.success(f"**Итог:** {combined}")
 
-    # ── Сравнение score и note_score ────────────────────────────────────
-    if note_sc is not None:
-        st.markdown("**Сравнение оценок**")
-        sc1, sc2 = st.columns(2)
-        sc1.metric("Structured score", f"{_sicon(score)} {score} / 100")
-        sc2.metric("Decision Note score", f"{_sicon(note_sc)} {note_sc} / 100")
-
-        delta = score - note_sc
-        if abs(delta) >= 15:
-            if delta > 0:
-                st.caption("💡 Ты лучше определяешь решение, чем формулируешь аналитическую записку.")
-            else:
-                st.caption("💡 Записка звучит лучше, чем структурная логика решения.")
-    else:
-        sc1, _ = st.columns(2)
-        sc1.metric("Structured score", f"{_sicon(score)} {score} / 100")
-        st.caption("Decision Note не была заполнена — оценка недоступна.")
-
     # ── Подробный режим ─────────────────────────────────────────────────
     if review_mode == "Подробный":
         col_g, col_m = st.columns(2)
@@ -310,13 +365,17 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
                 st.write(f"- {item}")
 
         if note_rev:
-            with st.expander("Разбор аналитической записки", expanded=False):
-                nq = _NQ_RU.get(note_rev.get("note_quality", ""), "")
-                st.write(f"**Качество:** {nq}  —  score {note_sc}/100")
-                st.write(f"**Резюме:** {note_rev.get('note_summary', '—')}")
+            _nq_label = _NQ_RU.get(note_rev.get("note_quality", ""), "")
+            _expander_title = f"📝 Оценка записки — {_nq_label}" if _nq_label else "📝 Оценка записки"
+            with st.expander(_expander_title, expanded=False):
+                if note_sc is not None:
+                    st.caption(f"Note score: {note_sc}/100")
+                st.write(note_rev.get("note_summary", "—"))
                 if note_rev.get("note_issues"):
                     for issue in note_rev["note_issues"]:
-                        st.write(f"- {issue}")
+                        st.caption(f"• {issue}")
+        elif note_sc is None and not has_mentor:
+            st.caption("📝 Записка не заполнена.")
 
         with st.expander("📖 Эталонный ответ", expanded=False):
             exp = expected_output
@@ -429,72 +488,88 @@ def render_trainer_tab():
     st.divider()
     st.subheader("Твой ответ")
 
-    sig_key = f"signals_{case_id}"
-    if sig_key not in st.session_state:
-        st.session_state[sig_key] = ["", ""]
-
     with st.form(key=f"trainer_form_{case_id}"):
-        ca, cb = st.columns(2)
-        with ca:
-            dm_ru  = st.selectbox("Решение", list(_DM_RU.values()), key=f"dm_{case_id}")
+
+        # ── Блок 1: Факты ────────────────────────────────────────────────
+        st.markdown("**1. Какие 2–4 ключевых факта установлены по кейсу?**")
+        st.caption("Только наблюдаемые факты — без интерпретаций и общих слов типа «высокий риск».")
+        key_facts = st.text_area(
+            "Факты", placeholder="Факт 1 / Факт 2 / Факт 3",
+            key=f"facts_{case_id}", height=100, label_visibility="collapsed",
+        )
+
+        # ── Блок 2 + 3: Риск + Почему ───────────────────────────────────
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**2. Что здесь основной риск-вопрос?**")
+            st.caption("1 риск + максимум 1 усилитель.")
+            main_risk = st.text_area(
+                "Риск", placeholder="Основной риск-вопрос кейса",
+                key=f"risk_q_{case_id}", height=80, label_visibility="collapsed",
+            )
+        with c2:
+            st.markdown("**3. Почему именно это создаёт риск?**")
+            st.caption("Связка: факт → риск. Где несоответствие?")
+            risk_reasoning = st.text_area(
+                "Reasoning", placeholder="Почему это важно для CDD/KYC",
+                key=f"risk_why_{case_id}", height=80, label_visibility="collapsed",
+            )
+
+        # ── Блок 4: Действия ─────────────────────────────────────────────
+        st.markdown("**4. Какие действия нужны?**")
+        st.caption("Что запросить / что проверить — не просто «EDD», а конкретные действия.")
+        actions = st.text_area(
+            "Действия", placeholder="Запросить ... / Проверить ... / Уточнить ...",
+            key=f"actions_{case_id}", height=80, label_visibility="collapsed",
+        )
+
+        # ── Блок 5 + 6: Решение + Decisive Factor ───────────────────────
+        c3, c4 = st.columns(2)
+        with c3:
+            st.markdown("**5. Какой outcome нужен?**")
+            dm_ru = st.selectbox(
+                "Решение", list(_DM_RU.values()), key=f"dm_{case_id}",
+                label_visibility="collapsed",
+            )
             cdd_ru = st.selectbox(
                 "Статус CDD", list(_CDD_RU.values()),
-                help="Помогает отличать незавершённый CDD от ситуации, где CDD действительно не может быть завершён.",
+                help="Незавершённый CDD vs структурный барьер.",
                 key=f"cdd_{case_id}",
             )
             risk_ru = st.selectbox(
-                "Уровень риска",
-                ["Низкий", "Средний", "Высокий"],
-                index=2,
-                key=f"risk_{case_id}",
+                "Уровень риска", ["Низкий", "Средний", "Высокий"],
+                index=2, key=f"risk_{case_id}",
             )
-        with cb:
+        with c4:
+            st.markdown("**6. Одна главная причина решения**")
+            st.caption("Одна мысль — не список, не пересказ всех флагов.")
+            df = st.text_area(
+                "Decisive factor",
+                placeholder="[конкретный факт] → [что это означает для решения]",
+                key=f"df_{case_id}", height=100, label_visibility="collapsed",
+            )
+
+        # ── Блок 7: Challenger View ───────────────────────────────────────
+        st.markdown("**7. Почему не ближайшая альтернатива?**")
+        st.caption("EDD → почему не Reject; Reject → почему не EDD; Approve → почему не EDD.")
+        challenger = st.text_area(
+            "Challenger view",
+            placeholder="Потому что... / В отличие от... / Альтернативный вывод был бы слабее, потому что...",
+            key=f"challenger_{case_id}", height=70, label_visibility="collapsed",
+        )
+
+        # ── Уверенность (скрыта в details, не доминирует) ───────────────
+        with st.expander("Дополнительно", expanded=False):
             conf = st.slider(
                 "Уверенность в решении", 1, 5, 3,
-                help="Показывает, насколько ты уверен(а) в своём решении. "
-                     "Помогает анализировать не только ошибки, но и ошибки при высокой уверенности.",
+                help="Для аналитики: помогает отловить ошибки при высокой уверенности.",
                 key=f"conf_{case_id}",
             )
-            df = st.text_area(
-                "Ключевой фактор решения",
-                placeholder="Одна конкретная формулировка главного перевешивающего фактора",
-                key=f"df_{case_id}", height=90,
-            )
 
-        st.markdown("**Сигналы (signal_trace)**")
-        sigs = []
-        for i, val in enumerate(st.session_state[sig_key]):
-            sv = st.text_input(f"Сигнал {i+1}", value=val,
-                               placeholder="Конкретный наблюдаемый факт",
-                               key=f"sig_{case_id}_{i}")
-            sigs.append(sv)
-
-        ca2, cb2, _ = st.columns([1, 1, 4])
-        add_s = ca2.form_submit_button("＋ Добавить сигнал")
-        rem_s = cb2.form_submit_button("－ Удалить последний")
-
-        # Шаблон-подсказка для Decision Note
-        with st.expander("💡 Подсказка по структуре аналитической записки", expanded=False):
-            st.markdown(_NOTE_TEMPLATE)
-
-        dn = st.text_area(
-            "Decision Note (аналитическая записка)",
-            placeholder=(
-                "Напиши краткую аналитическую записку: "
-                "кто клиент, факты, red flags, анализ, решение, аргументация."
-            ),
-            key=f"note_{case_id}", height=220,
-        )
         submitted = st.form_submit_button("🔍 Получить разбор")
 
-    if add_s:
-        if len(st.session_state[sig_key]) < MAX_SIG:
-            st.session_state[sig_key] = sigs + [""]
-        st.rerun()
-    if rem_s:
-        if len(st.session_state[sig_key]) > 2:
-            st.session_state[sig_key] = sigs[:-1]
-        st.rerun()
+    # Нет add/remove signal кнопок в beta — сигналы строятся из facts
+    add_s = rem_s = False
 
     if not submitted:
         # Показываем сохранённый review если он есть для текущего кейса
@@ -510,21 +585,17 @@ def render_trainer_tab():
     # Сборка user_output
     dm  = _DM_EN[dm_ru]
     cdd = _CDD_EN[cdd_ru]
-    # reject_reason_type выводится автоматически из decision_mode и cdd_status —
-    # пользователь не должен выбирать внутреннюю taxonomy напрямую
     if dm == "reject":
-        if "cannot be completed" in cdd.lower():
-            rr = "CDD_FAILURE"
-        else:
-            rr = "RISK_UNACCEPTABLE"
+        rr = "CDD_FAILURE" if "cannot be completed" in cdd.lower() else "RISK_UNACCEPTABLE"
     else:
         rr = "NONE"
 
+    # В Beta v1 signal_trace строится из key_facts — не из отдельных полей
     sd = {"edd": "SUPPORTS_ESCALATION", "reject": "SUPPORTS_REJECT"}.get(dm, "SUPPORTS_DECISION")
-    filled = [s.strip() for s in sigs if s.strip()]
-    trace  = [{"signal": t, "category": "OTHER",
+    facts_lines = [l.strip() for l in (key_facts or "").splitlines() if l.strip()]
+    trace = [{"signal": t, "category": "OTHER",
                "impact": "DECISIVE" if i == 0 else "HIGH",
-               "direction": sd, "comment": "Сигнал аналитика."} for i, t in enumerate(filled)]
+               "direction": sd, "comment": "Факт аналитика."} for i, t in enumerate(facts_lines)]
     while len(trace) < 2:
         trace.append({"signal": "Дополнительный контекст не указан.", "category": "OTHER",
                       "impact": "LOW", "direction": "MITIGATING", "comment": "Автоматически добавлен."})
@@ -533,13 +604,23 @@ def render_trainer_tab():
         "decision_mode": dm, "decision": _DM_RU[dm],
         "edd_required": "Да" if dm == "edd" else "Нет",
         "cdd_status": cdd, "risk_level": risk_ru,
-        "reject_reason_type": rr, "decisive_factor": df.strip() or "—",
+        "reject_reason_type": rr,
+        "decisive_factor": df.strip() or "—",
         "error_type": "NONE", "confidence_score": conf, "signal_trace": trace,
         "decision_summary": "", "case_overview": "", "key_risk_factors": [],
         "cdd_assessment": {"confirmed": [], "not_confirmed": [], "conclusion": ""},
         "analysis": "", "decision_rationale": "", "required_actions": [],
         "self_review": {"summary": "", "main_gap": "", "what_to_recheck": []},
+        # ── Beta v1: reasoning blocks — видны только Mentor, не deterministic core ──
+        "_beta_key_facts":      key_facts.strip()   if key_facts   else "",
+        "_beta_main_risk":      main_risk.strip()   if main_risk   else "",
+        "_beta_risk_reasoning": risk_reasoning.strip() if risk_reasoning else "",
+        "_beta_actions":        actions.strip()     if actions     else "",
+        "_beta_challenger":     challenger.strip()  if challenger  else "",
     }
+
+    # В Beta v1 Decision Note не обязательна — генерируется системой
+    dn = ""   # пустая строка → note_review не запускается, Mentor сгенерирует note
 
     with st.spinner("Анализирую ответ..."):
         review, run_id = submit_trainer_run(case_id, user_output, tc["expected_output"], decision_note=dn)
@@ -553,8 +634,6 @@ def render_trainer_tab():
         "trainer_case":    tc,
         "nav_mode":        nav_mode,
     }
-    st.session_state[sig_key] = ["", ""]
-
     # Показываем review: либо только что посчитанный, либо сохранённый из session_state
     _last = st.session_state.get("last_trainer_review")
     if _last and _last.get("case_id") == case_id:
