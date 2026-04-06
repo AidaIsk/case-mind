@@ -243,18 +243,21 @@ def submit_trainer_run(
     review["ai_coach_comment"] = coach_comment
 
     # ── AI Mentor Layer ───────────────────────────────────────────────
-    # Возвращает structured JSON: mentor_summary, what_you_got_right,
-    # main_gap, why_it_matters, stronger_decisive_factor,
-    # short_reference_note, next_step.
+    # Возвращает structured JSON для conversational teaching feedback.
     # Не меняет verdict, score, root_cause. Optional — None если нет API.
+    # Сохраняет ai_mentor_status для debug visibility.
     mentor_output = None
+    mentor_status = "not_available"
+    mentor_error  = None
     try:
         import os as _os2, json as _json
         from openai import OpenAI as _OpenAI2
         from core.trainer_coach_prompt import MENTOR_SYSTEM_PROMPT, build_mentor_prompt
 
         _api_key2 = _os2.getenv("OPENAI_API_KEY")
-        if _api_key2:
+        if not _api_key2:
+            mentor_status = "not_available"
+        else:
             _oa2 = _OpenAI2(api_key=_api_key2)
             _resp2 = _oa2.chat.completions.create(
                 model="gpt-4o-mini",
@@ -278,9 +281,64 @@ def submit_trainer_run(
                 if raw.startswith("json"):
                     raw = raw[4:]
             mentor_output = _json.loads(raw.strip())
+            # Проверяем что хотя бы одно ключевое поле есть
+            if not any(k in mentor_output for k in ("opening", "mentor_summary", "main_focus")):
+                mentor_status = "missing_key"
+                mentor_error  = "Response parsed but missing expected fields"
+                mentor_output = None
+            else:
+                mentor_status = "ok"
+    except _json.JSONDecodeError as _e:
+        mentor_status = "parse_error"
+        mentor_error  = f"JSON parse failed: {str(_e)[:120]}"
+    except Exception as _e:
+        mentor_status = "api_error"
+        mentor_error  = str(_e)[:120]
+    review["ai_mentor"]        = mentor_output
+    review["ai_mentor_status"] = mentor_status
+    review["ai_mentor_error"]  = mentor_error
+
+    # ── Field Review Layer ────────────────────────────────────────────
+    # Разбирает каждое beta-поле отдельно как teaching layer.
+    # Не меняет verdict, score, root_cause. Optional — None если нет API.
+    field_review = None
+    try:
+        import os as _os3, json as _json3
+        from openai import OpenAI as _OA3
+        from core.trainer_coach_prompt import (
+            FIELD_REVIEW_SYSTEM_PROMPT, build_field_review_prompt
+        )
+        _key3 = _os3.getenv("OPENAI_API_KEY")
+        # Запускаем только если хотя бы одно beta-поле заполнено
+        _has_beta = any(
+            (user_output.get(k) or "").strip()
+            for k in ("_beta_main_risk", "_beta_risk_reasoning",
+                      "_beta_actions", "_beta_challenger")
+        )
+        if _key3 and _has_beta:
+            _oa3 = _OA3(api_key=_key3)
+            _r3 = _oa3.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": FIELD_REVIEW_SYSTEM_PROMPT},
+                    {"role": "user",   "content": build_field_review_prompt(
+                        trainer_case    = trainer_case,
+                        user_output     = user_output,
+                        expected_output = expected_output,
+                    )},
+                ],
+                max_tokens=600,
+                temperature=0.2,
+            )
+            _raw3 = _r3.choices[0].message.content.strip()
+            if _raw3.startswith("```"):
+                _raw3 = _raw3.split("```")[1]
+                if _raw3.startswith("json"):
+                    _raw3 = _raw3[4:]
+            field_review = _json3.loads(_raw3.strip())
     except Exception:
         pass
-    review["ai_mentor"] = mentor_output
+    review["field_review"] = field_review
 
     run_id = save_trainer_run(
         trainer_case_id, user_output, expected_output, review, decision_note

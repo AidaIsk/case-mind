@@ -310,6 +310,57 @@ def _render_mentor_flat(mentor: dict) -> None:
 
 
 
+
+# ── Field Review Block ────────────────────────────────────────────────────
+
+_FIELD_LABELS = {
+    "main_risk":       "Основной риск-вопрос",
+    "risk_reasoning":  "Почему это риск",
+    "actions":         "Действия",
+    "decisive_factor": "Главная причина решения",
+    "challenger":      "Почему не альтернатива",
+}
+
+def _render_field_review(review: dict) -> None:
+    """
+    Рендерит field-by-field teaching review.
+    Показывается после mentor block и score, до detailed review.
+    Если field_review = None — ничего не показывает.
+    """
+    fr = review.get("field_review")
+    if not fr or not isinstance(fr, dict):
+        return
+
+    # Проверяем что хотя бы одно поле не null
+    if not any(fr.get(k) for k in _FIELD_LABELS):
+        return
+
+    with st.expander("🔬 Разбор по полям", expanded=True):
+        st.caption("Как звучало каждое поле — и где можно было сказать точнее.")
+
+        for field_key, field_label in _FIELD_LABELS.items():
+            field_data = fr.get(field_key)
+            if not field_data or not isinstance(field_data, dict):
+                continue
+
+            good    = field_data.get("what_is_good", "")
+            mixed   = field_data.get("what_is_mixed", "")
+            stronger = field_data.get("stronger_version", "")
+
+            if not any([good, mixed, stronger]):
+                continue
+
+            st.markdown(f"**{field_label}**")
+            c1, c2 = st.columns(2)
+            if good:
+                c1.markdown(f"✅ {good}")
+            if mixed:
+                c2.markdown(f"⚠️ {mixed}")
+            if stronger:
+                st.success(f"→ {stronger}")
+            st.divider()
+
+
 def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_mode: str, run_id: str, case_id: str):
     """Отображает результаты review — краткий или подробный режим."""
     st.divider()
@@ -355,6 +406,9 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
 
     if combined:
         st.success(f"**Итог:** {combined}")
+
+    # ── Field-by-field teaching review ──────────────────────────────────
+    _render_field_review(review)
 
     # ── Подробный режим ─────────────────────────────────────────────────
     if review_mode == "Подробный":
@@ -503,7 +557,7 @@ def render_trainer_tab():
 
         # ── Блок 1: Факты ────────────────────────────────────────────────
         st.markdown("**1. Какие 2–4 ключевых факта установлены по кейсу?**")
-        st.caption("Только наблюдаемые факты — без интерпретаций и общих слов типа «высокий риск».")
+        st.caption("Только наблюдаемые факты: что установлено, что выявлено, что не подтверждено. Не пиши сюда риски или выводы.")
         key_facts = st.text_area(
             "Факты", placeholder="Факт 1 / Факт 2 / Факт 3",
             key=f"facts_{case_id}", height=100, label_visibility="collapsed",
@@ -513,14 +567,14 @@ def render_trainer_tab():
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**2. Что здесь основной риск-вопрос?**")
-            st.caption("1 риск + максимум 1 усилитель.")
+            st.caption("Один главный risk-вопрос кейса. Не пиши сюда итоговое решение и не перечисляй все флаги.")  
             main_risk = st.text_area(
                 "Риск", placeholder="Основной риск-вопрос кейса",
                 key=f"risk_q_{case_id}", height=80, label_visibility="collapsed",
             )
         with c2:
             st.markdown("**3. Почему именно это создаёт риск?**")
-            st.caption("Связка: факт → риск. Где несоответствие?")
+            st.caption("Объясни ПОЧЕМУ факт создаёт риск: [факт] означает [риск] потому что... Не повторяй outcome.")  
             risk_reasoning = st.text_area(
                 "Reasoning", placeholder="Почему это важно для CDD/KYC",
                 key=f"risk_why_{case_id}", height=80, label_visibility="collapsed",
@@ -528,7 +582,7 @@ def render_trainer_tab():
 
         # ── Блок 4: Действия ─────────────────────────────────────────────
         st.markdown("**4. Какие действия нужны?**")
-        st.caption("Что запросить / что проверить — не просто «EDD», а конкретные действия.")
+        st.caption("Конкретные шаги: что запросить, что проверить. Не ограничивайся словом «EDD» — назови конкретное действие.")
         actions = st.text_area(
             "Действия", placeholder="Запросить ... / Проверить ... / Уточнить ...",
             key=f"actions_{case_id}", height=80, label_visibility="collapsed",
@@ -553,7 +607,7 @@ def render_trainer_tab():
             )
         with c4:
             st.markdown("**6. Одна главная причина решения**")
-            st.caption("Одна мысль — не список, не пересказ всех флагов.")
+            st.caption("Одна причина, которая перевешивает всё. Структура: [факт] → [что означает для решения]. Не пересказывай все риски.")  
             df = st.text_area(
                 "Decisive factor",
                 placeholder="[конкретный факт] → [что это означает для решения]",
@@ -562,7 +616,7 @@ def render_trainer_tab():
 
         # ── Блок 7: Challenger View ───────────────────────────────────────
         st.markdown("**7. Почему не ближайшая альтернатива?**")
-        st.caption("EDD → почему не Reject; Reject → почему не EDD; Approve → почему не EDD.")
+        st.caption("Почему ближайший альтернативный исход слабее. Не повторяй decisive factor — объясни, что делает альтернативу неверной.")  
         challenger = st.text_area(
             "Challenger view",
             placeholder="Потому что... / В отличие от... / Альтернативный вывод был бы слабее, потому что...",

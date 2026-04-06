@@ -415,3 +415,118 @@ def build_mentor_prompt(
     ]
 
     return "\n".join(lines)
+
+
+# ===========================================================================
+# Field Review Layer
+# ===========================================================================
+#
+# Разбирает каждую ключевую ячейку Beta v1 отдельно.
+# Teaching layer — не меняет verdict, score, root_cause.
+# Вызывается в services.py после AI Mentor.
+
+FIELD_REVIEW_SYSTEM_PROMPT = """
+Ты — teaching reviewer в системе CaseMind для KYC/AML-аналитиков.
+
+Твоя задача: разобрать каждое поле beta-формы отдельно.
+Помочь junior-аналитику понять, чем поля отличаются друг от друга и где он их смешивает.
+
+ЖЁСТКИЕ ОГРАНИЧЕНИЯ:
+- НЕ меняй decision_mode, cdd_status, reject_reason_type
+- НЕ пересчитывай score
+- НЕ противоречь основному mentor review
+- НЕ выдумывай факты которых нет в кейсе
+- Это teaching layer, а не evaluator
+
+СТИЛЬ:
+- коротко — 1-2 предложения на что хорошо, 1-2 на что смешано
+- concrete: называй конкретную проблему, не общий вывод
+- stronger_version: конкретная формулировка, не совет "будь конкретнее"
+- если поле хорошее — скажи честно, не придумывай проблему
+- если поле пустое — верни null для этого поля
+
+Язык: русский. OK: CDD, EDD, UBO, SoF, decisive factor.
+
+РАЗНИЦА МЕЖДУ ПОЛЯМИ (важно для teaching):
+- main_risk: один вопрос-риск кейса. НЕ итоговое решение, НЕ список сигналов.
+- risk_reasoning: ПОЧЕМУ это создаёт риск — связка факт→риск. НЕ повтор main_risk.
+- actions: конкретные шаги — что запросить/проверить. НЕ просто "EDD" или "отказать".
+- decisive_factor: одна причина РЕШЕНИЯ — [факт]→[что означает для outcome]. НЕ список, НЕ пересказ всего.
+- challenger: почему именно этот outcome, а не ближайшая альтернатива. НЕ повтор decisive_factor.
+
+Верни ТОЛЬКО валидный JSON без markdown:
+{
+  "main_risk": {
+    "what_is_good": "что точно верно — конкретно",
+    "what_is_mixed": "что смешано или слабее — конкретно (или null если всё OK)",
+    "stronger_version": "как звучало бы точнее"
+  },
+  "risk_reasoning": {
+    "what_is_good": "...",
+    "what_is_mixed": "...",
+    "stronger_version": "..."
+  },
+  "actions": {
+    "what_is_good": "...",
+    "what_is_mixed": "...",
+    "stronger_version": "..."
+  },
+  "decisive_factor": {
+    "what_is_good": "...",
+    "what_is_mixed": "...",
+    "stronger_version": "..."
+  },
+  "challenger": {
+    "what_is_good": "...",
+    "what_is_mixed": "...",
+    "stronger_version": "..."
+  }
+}
+
+Если поле пустое или содержит только "—" — верни null для этого ключа.
+""".strip()
+
+
+def build_field_review_prompt(
+    trainer_case:    dict,
+    user_output:     dict,
+    expected_output: dict,
+) -> str:
+    """
+    Строит prompt для field-by-field review.
+    Использует только beta reasoning fields — не трогает deterministic verdict.
+    """
+    case_desc   = trainer_case.get("description_user", "")[:300]
+    expected_df = (expected_output.get("decisive_factor") or "")[:200]
+    verdict_mode = expected_output.get("decision_mode", "")
+
+    main_risk   = user_output.get("_beta_main_risk", "")      or "—"
+    risk_why    = user_output.get("_beta_risk_reasoning", "")  or "—"
+    actions     = user_output.get("_beta_actions", "")         or "—"
+    df          = (user_output.get("decisive_factor") or "")   or "—"
+    challenger  = user_output.get("_beta_challenger", "")      or "—"
+
+    typical_mistake = (
+        trainer_case.get("typical_mistake") or
+        trainer_case.get("common_mistake", "—")
+    )
+
+    return "\n".join([
+        "КОНТЕКСТ КЕЙСА:",
+        f"Описание: {case_desc}",
+        f"Ожидаемое решение: {verdict_mode}",
+        f"Эталонный decisive factor: {expected_df}",
+        f"Типичная ошибка: {typical_mistake}",
+        "",
+        "ОТВЕТЫ АНАЛИТИКА ПО ПОЛЯМ:",
+        f"main_risk (основной риск-вопрос): {main_risk}",
+        f"risk_reasoning (почему это риск): {risk_why}",
+        f"actions (действия): {actions}",
+        f"decisive_factor (главная причина решения): {df}",
+        f"challenger (почему не альтернатива): {challenger}",
+        "",
+        "Разбери каждое поле отдельно согласно system prompt.",
+        "Обрати внимание: не смешиваются ли main_risk и risk_reasoning?",
+        "Не повторяет ли decisive_factor просто main_risk?",
+        "Достаточно ли конкретны actions?",
+    ])
