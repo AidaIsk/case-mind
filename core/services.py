@@ -147,9 +147,9 @@ def review_trainer_case(user_output: dict, expected_output: dict) -> dict:
     return evaluate_trainer_answer(user_output, expected_output)
 
 
-def _build_user_note(user_output: dict) -> str:
+def _build_user_note(user_output: dict, trainer_case: dict | None = None) -> str:
     """
-    Детерминированно собирает короткую записку из beta reasoning fields.
+    Детерминированно собирает короткую analyst-style note из beta reasoning fields.
     Без LLM. Работает всегда, даже без API.
     """
     dm      = user_output.get("decision_mode", "")
@@ -161,25 +161,114 @@ def _build_user_note(user_output: dict) -> str:
     actions = (user_output.get("_beta_actions") or "").strip()
     ch      = (user_output.get("_beta_challenger") or "").strip()
 
-    _DM = {"approve": "Одобрить", "edd": "Эскалация (EDD)", "reject": "Отказать"}
+    _DM = {
+        "approve": "Одобрить",
+        "edd": "Эскалация (EDD)",
+        "reject": "Отказать",
+    }
+    _CDD = {
+        "Complete": "CDD завершён",
+        "Incomplete": "CDD не завершён",
+        "Incomplete and cannot be completed": "CDD не может быть завершён",
+        "Complete but risk not acceptable": "CDD завершён, но риск неприемлем",
+    }
+
+    def _clean(text: str) -> str:
+        return (text or "").strip().rstrip(". ")
+
+    def _sentence(text: str) -> str:
+        text = _clean(text)
+        return f"{text}." if text else ""
+
+    def _lc(text: str) -> str:
+        text = _clean(text)
+        if not text:
+            return ""
+        return text[0].lower() + text[1:]
+
     outcome = _DM.get(dm, dm)
+    cdd_ru  = _CDD.get(cdd, cdd)
 
-    parts = []
+    sentences = []
+
+    # 1. Клиент / кейс
+    if trainer_case:
+        cd = trainer_case.get("case_data", {}) or {}
+        client_name = (cd.get("client_name") or "").strip()
+        case_type   = (cd.get("case_type") or "").strip()
+        activity    = (cd.get("business_activity") or "").strip()
+
+        intro_parts = []
+        if client_name:
+            intro_parts.append(client_name)
+        if case_type:
+            intro_parts.append(case_type.lower())
+        if activity:
+            intro_parts.append(activity.lower())
+
+        if intro_parts:
+            sentences.append(f"Кейс: {', '.join(intro_parts)}.")
+
+    # 2. Что установлено
     if facts:
-        parts.append(f"Установлено: {facts}.")
-    if risk and why:
-        parts.append(f"{risk} — {why}.")
-    elif risk:
-        parts.append(f"Основной риск: {risk}.")
-    if df:
-        parts.append(f"Ключевой фактор: {df}.")
-    if actions:
-        parts.append(f"Действия: {actions}.")
-    parts.append(f"Решение: {outcome}.")
-    if ch:
-        parts.append(f"{ch}.")
+        sentences.append(f"По кейсу установлено: {_clean(facts)}.")
 
-    return " ".join(parts) if parts else ""
+    # 3. Что вызывает вопросы
+    if risk and why:
+        sentences.append(
+            f"Основной вопрос связан с тем, что {_lc(risk)}, "
+            f"поскольку {_lc(why)}."
+        )
+    elif risk:
+        sentences.append(f"Основной вопрос связан с {_lc(risk)}.")
+    elif why:
+        sentences.append(f"Дополнительного анализа требует следующее обстоятельство: {_clean(why)}.")
+
+    # 4. Действия / решение
+    if dm == "edd":
+        if actions:
+            sentences.append(f"Для продолжения проверки требуется: {_clean(actions)}.")
+        if df:
+            sentences.append(
+                f"На текущем этапе {_lc(cdd_ru)}, поэтому требуется {_lc(outcome)}: {_lc(df)}."
+            )
+        else:
+            sentences.append(
+                f"На текущем этапе {_lc(cdd_ru)}, поэтому требуется {_lc(outcome)}."
+            )
+
+    elif dm == "reject":
+        if df:
+            sentences.append(f"Решение — {_lc(outcome)}, поскольку {_lc(df)}.")
+        else:
+            sentences.append(f"Решение — {_lc(outcome)}.")
+        if actions:
+            sentences.append(f"Следующий шаг: {_clean(actions)}.")
+
+    elif dm == "approve":
+        if df:
+            sentences.append(
+                f"Решение — {_lc(outcome)}, поскольку {_lc(cdd_ru)} и {_lc(df)}."
+            )
+        else:
+            sentences.append(f"Решение — {_lc(outcome)}, поскольку {_lc(cdd_ru)}.")
+        if actions:
+            sentences.append(f"Дополнительно рекомендуется: {_clean(actions)}.")
+
+    else:
+        if df:
+            sentences.append(f"Итоговый вывод основан на следующем ключевом факторе: {_clean(df)}.")
+        if outcome:
+            sentences.append(f"Решение: {outcome}.")
+        if actions:
+            sentences.append(f"Дальнейшие действия: {_clean(actions)}.")
+
+    # 5. Почему не альтернатива
+    if ch:
+        sentences.append(_sentence(ch))
+
+    note = " ".join(s for s in sentences if s).strip()
+    return note if note else ""
 
 
 def _build_reference_note(
@@ -427,7 +516,8 @@ def submit_trainer_run(
         nb = mentor_output.get("note_block", {}) or {}
         mentor_short_ref = nb.get("short_reference", "") or ""
 
-    user_note_text = _build_user_note(user_output)
+    user_note_text = _build_user_note(user_output, trainer_case)
+    
     ref_note_text  = _build_reference_note(trainer_case, expected_output, mentor_short_ref)
 
     review["user_note"]      = user_note_text if user_note_text else None
