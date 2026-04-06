@@ -156,6 +156,591 @@ TRAINER_CASES = [
 
 ]
 
+# beta_cases.py
+# 5 beta-кейсов для junior KYC-аналитика с KZ-реалиями.
+# Добавить в конец TRAINER_CASES в trainer/trainer_cases.py.
+# Beta whitelist: ['EASY-01', 'EASY-02', 'MED-01', 'MED-02', 'ADV-01']
+
+BETA_CASES = [
+
+    # ── EASY-01: ТОО «Алтын Консалт» — незакрытый SoF ───────────────────
+    {
+        'case_id':       'EASY-01',
+        'title_user':    'ТОО «Алтын Консалт» — маркетинговый консалтинг',
+        'description_user': (
+            'ТОО зарегистрировано 4 месяца назад. Деятельность — маркетинговый консалтинг. '
+            'Клиент запрашивает открытие расчётного счёта. '
+            'UBO — физическое лицо, гражданин РК, верифицирован. '
+            'Source of Funds заявлен как «доход от консалтинговой деятельности», '
+            'но ни одного договора с клиентами не представлено. '
+            'Adverse media — нет. PEP — нет. Sanctions — нет.'
+        ),
+        'documents_provided': ['Устав', 'Свидетельство о регистрации', 'ИИН директора', 'Заявление об источнике средств'],
+        'additional_observations': [
+            'Компания зарегистрирована 4 месяца назад — реальной операционной истории нет',
+            'SoF заявлен словесно, ни один договор с заказчиками не представлен',
+        ],
+        'questions_or_conflict': 'Скрининг полностью чистый, UBO установлен — но SoF не подтверждён документально.',
+        'question_to_analyst': 'Какое решение корректно? Укажите статус CDD, уровень риска и главный фактор решения.',
+        'difficulty': 'beginner',
+        'scenario_type': 'Consulting / SoF gap',
+        'decisive_factor': 'Source of Funds заявлен, но не подтверждён ни одним договором — CDD не завершён до получения подтверждения.',
+        'typical_mistake': 'Approve на основании чистого скрининга: «PEP нет, санкций нет — можно одобрить». Игнорирование незакрытого SoF.',
+        'common_mistake': 'Approve на основании чистого скрининга, игнорируя незакрытый SoF.',
+        'why_not_approve': 'CDD не завершён: SoF заявлен, но не подтверждён документально. Approve блокирован.',
+        'why_not_edd': 'EDD корректен и является правильным решением для этого кейса.',
+        'why_not_reject': 'UBO установлен, скрининг чистый, пробел в документах закрываемый — это не structural blocker.',
+        'what_good_answer_should_include': [
+            'SoF не подтверждён — это незакрытый CDD gap',
+            'Это closable gap: нужно запросить договоры с клиентами',
+            'Скрининг чистый — это не меняет статус CDD',
+        ],
+        'rationale_gold_standard': (
+            'CDD не завершён: Source of Funds заявлен словесно, но не подтверждён ни одним договором. '
+            'Это устранимый пробел — нужно запросить контракты с заказчиками. '
+            'Чистый скрининг не компенсирует незакрытый SoF. '
+            'Решение: EDD до получения подтверждения.'
+        ),
+        'gold_standard': (
+            'CDD не завершён — SoF не подтверждён. '
+            'Запросить договоры с заказчиками. Чистый скрининг не компенсирует незакрытый SoF. EDD.'
+        ),
+        'legit_alternative': 'Approve после получения договоров.',
+        'semantic_schema': {
+            'mandatory_ideas': [
+                'SoF не подтверждён документально — это незакрытый gap',
+                'gap закрываемый, нужно запросить договоры',
+            ],
+            'forbidden_ideas': [
+                'чистый скрининг достаточен для одобрения',
+                'reject из-за отсутствия договоров',
+            ],
+            'decisive_factor_mode': 'single_main_thought',
+            'note_expectation': {
+                'max_length_preference': 'short',
+                'challenger_view_required': 'light',
+                'tone': ['neutral', 'professional', 'non-accusatory'],
+            },
+        },
+        'signal_expectations': {
+            'mandatory_signals': [
+                'SoF заявлен, но не подтверждён договорами',
+                'UBO установлен, скрининг чистый',
+            ],
+            'optional_signals': ['компания молодая (4 месяца)'],
+            'forbidden_signals': ['reject из-за молодости компании'],
+        },
+        'expected_output': {
+            'decision_mode':      'edd',
+            'decision':           'Эскалация',
+            'edd_required':       'Да',
+            'cdd_status':         'Incomplete',
+            'risk_level':         'Средний',
+            'reject_reason_type': 'NONE',
+            'decisive_factor': (
+                'Source of Funds заявлен, но не подтверждён ни одним договором — '
+                'CDD не завершён до получения документального подтверждения.'
+            ),
+            'error_type':         'NONE',
+            'confidence_score':   4,
+            'signal_trace': [
+                {'signal': 'SoF заявлен словесно, ни одного договора с заказчиками не представлено',
+                 'category': 'SOF', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_ESCALATION', 'comment': ''},
+                {'signal': 'UBO установлен, скрининг чистый — нет оснований для отказа',
+                 'category': 'SCREENING', 'impact': 'MITIGATING', 'direction': 'MITIGATING', 'comment': ''},
+            ],
+        },
+        'case_data': {
+            'case_id': 'EASY-01', 'case_type': 'Onboarding',
+            'client_type': 'Юридическое лицо',
+            'client_name': 'ТОО «Алтын Консалт»',
+            'registration_country': 'Казахстан',
+            'business_activity': 'Consulting / SoF gap',
+            'beneficial_owner_identified': 'Да',
+            'source_of_funds_summary': 'Заявлен словесно — договоры не представлены',
+            'supporting_documents_provided': 'Частично',
+            'sanctions_result': 'Совпадений нет',
+            'pep_result': 'Нет',
+            'adverse_media_result': 'Нет',
+            'unresolved_screening_issues': '',
+        },
+    },
+
+    # ── EASY-02: ИП Смагулов — Курьерские услуги ─────────────────────────
+    {
+        'case_id':       'EASY-02',
+        'title_user':    'ИП Смагулов — Курьерские услуги, Алматы',
+        'description_user': (
+            'ИП занимается курьерской доставкой по Алматы, зарегистрирован 3 года назад. '
+            'Запрашивает открытие бизнес-счёта. '
+            'Оборот за последние 6 месяцев — 2,4 млн тенге (ок. 400 тыс./мес). '
+            'Предоставлены: свидетельство ИП, банковская выписка за 6 месяцев, '
+            '3 договора с клиентами-юрлицами. UBO — сам ИП, верифицирован. '
+            'Скрининг: чисто. '
+            'ИП не имеет сайта и соцсетей, рабочий адрес — домашний.'
+        ),
+        'documents_provided': ['Свидетельство ИП', 'Банковская выписка 6 мес.', '3 договора с контрагентами', 'ИИН'],
+        'additional_observations': [
+            'Нет сайта и публичных соцсетей',
+            'Рабочий адрес совпадает с домашним',
+        ],
+        'questions_or_conflict': 'Все документы предоставлены, скрининг чистый. Единственные вопросы — отсутствие публичного следа и домашний адрес.',
+        'question_to_analyst': 'Какое решение корректно? Нужен ли EDD или можно одобрить?',
+        'difficulty': 'beginner',
+        'scenario_type': 'Small business / Over-reject risk',
+        'decisive_factor': (
+            'UBO верифицирован, SoF подтверждён выписками и договорами, скрининг чистый — '
+            'отсутствие сайта и домашний адрес нормальны для микробизнеса.'
+        ),
+        'typical_mistake': 'EDD или Reject из-за домашнего адреса и отсутствия сайта. Over-reject на основании косвенных признаков при полном CDD.',
+        'common_mistake': 'Over-reject: "нет сайта и публичного следа — подозрительно".',
+        'why_not_approve': 'Approve является корректным решением.',
+        'why_not_edd': 'CDD завершён полностью: UBO, SoF, документы подтверждены. EDD был бы избыточен.',
+        'why_not_reject': 'Нет оснований — скрининг чистый, документы полные. Домашний адрес законен для ИП.',
+        'what_good_answer_should_include': [
+            'Все элементы CDD подтверждены: UBO, SoF, операционная история',
+            'Отсутствие сайта для малого ИП — не красный флаг',
+            'Домашний адрес для ИП — распространённая практика в РК',
+            'Approve при полном CDD и чистом скрининге',
+        ],
+        'rationale_gold_standard': (
+            'CDD завершён: UBO верифицирован, SoF подтверждён выписками и договорами, скрининг чистый. '
+            'Отсутствие сайта и домашний адрес — норма для малого бизнеса в РК. '
+            'Это не красные флаги, а особенности микропредпринимательства. '
+            'Решение: Approve.'
+        ),
+        'gold_standard': (
+            'CDD завершён. UBO, SoF, документы — всё подтверждено. '
+            'Отсутствие сайта для ИП не является основанием для EDD. Approve.'
+        ),
+        'legit_alternative': 'EDD был бы избыточен.',
+        'semantic_schema': {
+            'mandatory_ideas': [
+                'CDD завершён: UBO, SoF, документы подтверждены',
+                'домашний адрес и отсутствие сайта — норма для малого бизнеса',
+            ],
+            'forbidden_ideas': [
+                'reject или EDD из-за отсутствия сайта',
+                'домашний адрес как red flag',
+            ],
+            'decisive_factor_mode': 'single_main_thought',
+            'note_expectation': {
+                'max_length_preference': 'short',
+                'challenger_view_required': 'light',
+                'tone': ['neutral', 'professional', 'non-accusatory'],
+            },
+        },
+        'signal_expectations': {
+            'mandatory_signals': [
+                'UBO верифицирован, скрининг чистый',
+                'SoF подтверждён выписками и договорами',
+            ],
+            'optional_signals': ['3 года операционной истории'],
+            'forbidden_signals': ['домашний адрес как признак мошенничества'],
+        },
+        'expected_output': {
+            'decision_mode':      'approve',
+            'decision':           'Одобрить',
+            'edd_required':       'Нет',
+            'cdd_status':         'Complete',
+            'risk_level':         'Низкий',
+            'reject_reason_type': 'NONE',
+            'decisive_factor': (
+                'UBO верифицирован, SoF подтверждён выписками и договорами, скрининг чистый — '
+                'отсутствие сайта и домашний адрес нормальны для микробизнеса в РК.'
+            ),
+            'error_type':         'NONE',
+            'confidence_score':   5,
+            'signal_trace': [
+                {'signal': 'UBO верифицирован, скрининг чистый, документы полные',
+                 'category': 'CDD', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_DECISION', 'comment': ''},
+                {'signal': 'SoF подтверждён выписками и договорами с юрлицами',
+                 'category': 'SOF', 'impact': 'HIGH', 'direction': 'SUPPORTS_DECISION', 'comment': ''},
+                {'signal': 'Нет сайта, домашний адрес — норма для малого ИП в РК',
+                 'category': 'OTHER', 'impact': 'LOW', 'direction': 'MITIGATING', 'comment': ''},
+            ],
+        },
+        'case_data': {
+            'case_id': 'EASY-02', 'case_type': 'Onboarding',
+            'client_type': 'Индивидуальный предприниматель',
+            'client_name': 'ИП Смагулов — Курьерские услуги',
+            'registration_country': 'Казахстан',
+            'business_activity': 'Small business / Over-reject risk',
+            'beneficial_owner_identified': 'Да',
+            'source_of_funds_summary': 'Подтверждён выписками и договорами',
+            'supporting_documents_provided': 'Да',
+            'sanctions_result': 'Совпадений нет',
+            'pep_result': 'Нет',
+            'adverse_media_result': 'Нет',
+            'unresolved_screening_issues': '',
+        },
+    },
+
+    # ── MED-01: ТОО «Digital Bridge» — IT-сервисы ────────────────────────
+    {
+        'case_id':       'MED-01',
+        'title_user':    'ТОО «Digital Bridge» — IT-услуги, иностранные заказчики',
+        'description_user': (
+            'ТОО оказывает IT-услуги (разработка ПО) клиентам из России и ОАЭ. '
+            'Зарегистрировано 1,5 года назад. Директор — гражданин РК, 29 лет, UBO. '
+            'Предоставлены контракты с двумя иностранными заказчиками на $85 000 суммарно. '
+            'SoF — доходы по этим контрактам. Скрининг чистый. '
+            'Один из заказчиков (ОАЭ) — компания без понятного публичного следа. '
+            'Оплата от него поступила одним платежом за 6 месяцев работы. '
+            'Налоговая отчётность минимальная — директор объясняет ранним этапом бизнеса.'
+        ),
+        'documents_provided': ['Устав', 'Контракты с двумя заказчиками', 'SWIFT-выписки', 'Налоговая декларация'],
+        'additional_observations': [
+            'Заказчик из ОАЭ — компания без публичного следа, оплата одним платежом за 6 мес.',
+            'Налоговая нагрузка низкая, но директор объяснил это ранней стадией',
+            'Заказчик из России — публичная IT-компания с сайтом',
+        ],
+        'questions_or_conflict': 'UBO установлен, контракты предоставлены. Вопрос: достаточно ли этого для закрытия SoF, или нужно верифицировать заказчика из ОАЭ?',
+        'question_to_analyst': 'Какое решение корректно — EDD или Reject?',
+        'difficulty': 'intermediate',
+        'scenario_type': 'IT / Cross-border / Closable gap',
+        'decisive_factor': (
+            'SoF подтверждён контрактами, UBO известен — риски связаны с непрозрачностью '
+            'заказчика из ОАЭ, что является закрываемым gap, а не structural blocker.'
+        ),
+        'typical_mistake': 'Reject как "схема вывода" или "компания-однодневка". Путаница closable gap и structural blocker.',
+        'common_mistake': 'Reject из-за непрозрачного заказчика ОАЭ — не различают closable gap и structural blocker.',
+        'why_not_approve': 'Заказчик из ОАЭ без публичного следа — gap в верификации контрагента. CDD не завершён.',
+        'why_not_edd': 'EDD является корректным решением.',
+        'why_not_reject': (
+            'UBO известен, контракты предоставлены, SoF объяснён. '
+            'Непрозрачный заказчик — это gap, который закрывается через запрос по контрагенту. '
+            'Нет structural blocker.'
+        ),
+        'what_good_answer_should_include': [
+            'Различие: closable gap vs structural blocker',
+            'UBO установлен — это снимает главный риск',
+            'Заказчик ОАЭ — запросить через EDD, не отказывать',
+            'Контракты есть — SoF частично подтверждён',
+        ],
+        'rationale_gold_standard': (
+            'UBO установлен и верифицирован. SoF подтверждён контрактами. '
+            'Заказчик из ОАЭ без публичного следа — это закрываемый gap, '
+            'который устраняется через запрос информации о контрагенте. '
+            'Это не structural blocker — UBO известен, контракты реальны. '
+            'Решение: EDD для верификации заказчика из ОАЭ.'
+        ),
+        'gold_standard': (
+            'UBO известен, SoF подтверждён контрактами. '
+            'Заказчик ОАЭ — closable gap, не structural blocker. EDD для верификации контрагента.'
+        ),
+        'legit_alternative': 'Approve после верификации заказчика из ОАЭ.',
+        'semantic_schema': {
+            'mandatory_ideas': [
+                'UBO установлен — главный риск снят',
+                'непрозрачный заказчик ОАЭ — closable gap, не structural blocker',
+                'EDD для верификации контрагента',
+            ],
+            'forbidden_ideas': [
+                'reject из-за непрозрачного заказчика',
+                'компания-однодневка без доказательств',
+            ],
+            'decisive_factor_mode': 'single_main_thought',
+            'note_expectation': {
+                'max_length_preference': 'short',
+                'challenger_view_required': 'explicit',
+                'tone': ['neutral', 'professional', 'non-accusatory'],
+            },
+        },
+        'signal_expectations': {
+            'mandatory_signals': [
+                'UBO установлен, контракты с заказчиками предоставлены',
+                'заказчик из ОАЭ без публичного следа — gap требует верификации',
+            ],
+            'optional_signals': ['минимальная налоговая нагрузка на ранней стадии'],
+            'forbidden_signals': ['reject без доказательства structural blocker'],
+        },
+        'expected_output': {
+            'decision_mode':      'edd',
+            'decision':           'Эскалация',
+            'edd_required':       'Да',
+            'cdd_status':         'Incomplete',
+            'risk_level':         'Средний',
+            'reject_reason_type': 'NONE',
+            'decisive_factor': (
+                'SoF подтверждён контрактами, UBO известен — '
+                'непрозрачность заказчика из ОАЭ является закрываемым gap, а не structural blocker.'
+            ),
+            'error_type':         'NONE',
+            'confidence_score':   3,
+            'signal_trace': [
+                {'signal': 'Заказчик из ОАЭ без публичного следа, оплата одним платежом за 6 мес.',
+                 'category': 'SOF', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_ESCALATION', 'comment': ''},
+                {'signal': 'UBO установлен, контракты с заказчиками предоставлены',
+                 'category': 'CDD', 'impact': 'HIGH', 'direction': 'MITIGATING', 'comment': ''},
+                {'signal': 'Заказчик из России — публичная компания с историей',
+                 'category': 'OTHER', 'impact': 'MEDIUM', 'direction': 'MITIGATING', 'comment': ''},
+            ],
+        },
+        'case_data': {
+            'case_id': 'MED-01', 'case_type': 'Onboarding',
+            'client_type': 'Юридическое лицо',
+            'client_name': 'ТОО «Digital Bridge»',
+            'registration_country': 'Казахстан',
+            'business_activity': 'IT / Cross-border / Closable gap',
+            'beneficial_owner_identified': 'Да',
+            'source_of_funds_summary': 'Подтверждён контрактами с двумя заказчиками',
+            'supporting_documents_provided': 'Частично (заказчик ОАЭ не верифицирован)',
+            'sanctions_result': 'Совпадений нет',
+            'pep_result': 'Нет',
+            'adverse_media_result': 'Нет',
+            'unresolved_screening_issues': '',
+        },
+    },
+
+    # ── MED-02: ТОО «СтройПроект» — structural UBO blocker ───────────────
+    {
+        'case_id':       'MED-02',
+        'title_user':    'ТОО «СтройПроект» — учредитель недоступен для верификации',
+        'description_user': (
+            'ТОО занимается строительными подрядами. Директор — гражданин РК. '
+            'По документам UBO — другое физическое лицо с долей 51%, '
+            'которое не отвечает на запросы банка уже 3 недели и не предоставило документы. '
+            'Директор объяснил это тем, что «учредитель проживает за рубежом и сейчас недоступен». '
+            'В системе государственной регистрации этот учредитель также значится директором ещё 14 компаний. '
+            'ТОО выиграло тендер с государственной структурой на 120 млн тенге.'
+        ),
+        'documents_provided': ['Устав', 'Данные директора', 'Тендерный контракт', 'Заявление о структуре владения'],
+        'additional_observations': [
+            'UBO (51% доля) не отвечает на запросы банка 3 недели',
+            'Этот же человек — директор ещё 14 компаний (признак номинала)',
+            'Тендерный контракт с госструктурой на 120 млн тенге уже подписан',
+        ],
+        'questions_or_conflict': 'UBO с контрольной долей не верифицирован и не выходит на контакт. Можно ли завершить CDD?',
+        'question_to_analyst': 'Это closable gap или structural blocker? Какое решение корректно?',
+        'difficulty': 'intermediate',
+        'scenario_type': 'Construction / UBO Structural Blocker',
+        'decisive_factor': (
+            'UBO с контрольной долей (51%) не идёт на контакт и имеет признаки номинала — '
+            'верификация невозможна, это structural blocker, а не closable gap.'
+        ),
+        'typical_mistake': 'EDD вместо Reject — "давайте ещё раз запросим документы". Путаница: не все пробелы закрываемы.',
+        'common_mistake': 'EDD вместо Reject/CDD_FAILURE — не различают closable gap и structural blocker по UBO.',
+        'why_not_approve': 'UBO с контрольной долей не верифицирован — Approve заблокирован.',
+        'why_not_edd': (
+            'EDD не устранит проблему: UBO уже не реагирует на запросы 3 недели + '
+            'признаки номинала (14 компаний). Дополнительные запросы не дадут результата.'
+        ),
+        'why_not_reject': 'Reject/CDD_FAILURE является корректным решением.',
+        'what_good_answer_should_include': [
+            'UBO недоступен + признаки номинала = structural blocker',
+            'Это не closable gap: дополнительные запросы уже сделаны и не дали результата',
+            'CDD не может быть завершён при неверифицированном UBO с 51%',
+            'Тендерный контракт не меняет compliance-оценку',
+        ],
+        'rationale_gold_standard': (
+            'UBO с контрольной долей 51% недоступен для верификации: '
+            'не отвечает на запросы 3 недели, имеет признаки номинала (14 компаний). '
+            'Это structural blocker — EDD не устранит проблему. '
+            'CDD не может быть завершён. Наличие тендерного контракта не меняет compliance-оценку. '
+            'Решение: Reject / CDD_FAILURE.'
+        ),
+        'gold_standard': (
+            'UBO с 51% не верифицирован и имеет признаки номинала. Structural blocker. '
+            'EDD не поможет — запросы уже не дали результата. Reject/CDD_FAILURE.'
+        ),
+        'legit_alternative': '',
+        'semantic_schema': {
+            'mandatory_ideas': [
+                'UBO с контрольной долей недоступен — structural blocker, не closable gap',
+                'признаки номинала (14 компаний) усиливают невозможность верификации',
+                'EDD не устранит проблему — запросы уже не дали результата',
+            ],
+            'forbidden_ideas': [
+                'EDD поможет дождаться ответа учредителя',
+                'тендерный контракт снижает риск',
+            ],
+            'decisive_factor_mode': 'single_main_thought',
+            'note_expectation': {
+                'max_length_preference': 'short',
+                'challenger_view_required': 'explicit',
+                'tone': ['neutral', 'professional', 'non-accusatory'],
+            },
+        },
+        'signal_expectations': {
+            'mandatory_signals': [
+                'UBO (51%) не верифицирован, не отвечает на запросы 3 недели',
+                'признаки номинального директора: 14 компаний',
+            ],
+            'optional_signals': ['тендерный контракт с госструктурой — не меняет CDD-оценку'],
+            'forbidden_signals': ['EDD закроет проблему с UBO'],
+        },
+        'expected_output': {
+            'decision_mode':      'reject',
+            'decision':           'Отказать',
+            'edd_required':       'Нет',
+            'cdd_status':         'Incomplete and cannot be completed',
+            'risk_level':         'Высокий',
+            'reject_reason_type': 'CDD_FAILURE',
+            'decisive_factor': (
+                'UBO с контрольной долей 51% не идёт на контакт и имеет признаки номинала — '
+                'верификация невозможна, CDD не может быть завершён.'
+            ),
+            'error_type':         'NONE',
+            'confidence_score':   3,
+            'signal_trace': [
+                {'signal': 'UBO (51% доля) не верифицирован, не отвечает 3 недели',
+                 'category': 'CDD', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_REJECT', 'comment': ''},
+                {'signal': 'Тот же человек — директор ещё 14 компаний (признак номинала)',
+                 'category': 'OTHER', 'impact': 'HIGH', 'direction': 'SUPPORTS_REJECT', 'comment': ''},
+                {'signal': 'Тендерный контракт с госструктурой — не устраняет CDD-барьер',
+                 'category': 'OTHER', 'impact': 'LOW', 'direction': 'MITIGATING', 'comment': ''},
+            ],
+        },
+        'case_data': {
+            'case_id': 'MED-02', 'case_type': 'Onboarding',
+            'client_type': 'Юридическое лицо',
+            'client_name': 'ТОО «СтройПроект»',
+            'registration_country': 'Казахстан',
+            'business_activity': 'Construction / UBO Structural Blocker',
+            'beneficial_owner_identified': 'Нет',
+            'source_of_funds_summary': '',
+            'supporting_documents_provided': 'Частично (UBO не верифицирован)',
+            'sanctions_result': 'Совпадений нет',
+            'pep_result': 'Нет',
+            'adverse_media_result': 'Нет',
+            'unresolved_screening_issues': 'UBO с 51% долей не верифицирован',
+        },
+    },
+
+    # ── ADV-01: ТОО «Meridian Trading» — смешанные сигналы, EDD не Reject ─
+    {
+        'case_id':       'ADV-01',
+        'title_user':    'ТОО «Meridian Trading» — экспорт зерна, PEP-adjacency',
+        'description_user': (
+            'ТОО занимается экспортом зерновых культур. Клиент работает с банком 2 года, '
+            'история транзакций без нарушений. '
+            'Новый запрос: открытие аккредитива на $340 000 в пользу нового контрагента из Китая. '
+            'Директор и UBO — один человек, гражданин РК. '
+            'SoF: собственные средства + кредит от другого казахстанского банка. '
+            'Директор является племянником действующего акима одного из районов ЮКО. '
+            'Контрагент из Китая — новая компания без истории операций с этим клиентом. '
+            'Запрашиваемая сумма в 8 раз превышает среднемесячный оборот клиента. '
+            'Основная деятельность клиента ранее была внутри РК — первый крупный международный контракт.'
+        ),
+        'documents_provided': ['Устав', 'Кредитный договор', 'Контракт с китайским контрагентом', 'История транзакций 2 года'],
+        'additional_observations': [
+            'Директор — племянник действующего акима района ЮКО (PEP-adjacency, не прямой PEP)',
+            'Сумма аккредитива в 8 раз превышает среднемесячный оборот',
+            'Первый крупный международный контракт — новое направление для клиента',
+            'Контрагент из Китая без истории с этим клиентом',
+            '2 года чистой истории с банком',
+        ],
+        'questions_or_conflict': (
+            'Несколько усиливающих факторов риска, но клиент с чистой историей и понятным UBO. '
+            'Главный вопрос: это управляемые риски (EDD) или неприемлемый риск (Reject)?'
+        ),
+        'question_to_analyst': 'Какое решение корректно? Обоснуйте, почему именно EDD, а не Reject.',
+        'difficulty': 'advanced',
+        'scenario_type': 'Trade Finance / PEP-adjacency / Mixed signals',
+        'decisive_factor': (
+            'PEP-adjacency + новый международный контрагент + нестандартная сумма — '
+            'управляемые риски при известном UBO и 2-летней чистой истории клиента: EDD, не Reject.'
+        ),
+        'typical_mistake': 'Reject из-за PEP-adjacency и нестандартной суммы, игнорируя историю клиента и закрываемость рисков.',
+        'common_mistake': 'Over-reject: PEP-adjacency + нестандартная сумма = автоматический Reject без анализа управляемости рисков.',
+        'why_not_approve': 'PEP-adjacency + новый международный контрагент + нестандартная сумма требуют усиленной проверки.',
+        'why_not_edd': 'EDD является корректным решением.',
+        'why_not_reject': (
+            'UBO известен и верифицирован. 2 года чистой истории с банком. '
+            'PEP-adjacency — не прямой PEP. Контракт предоставлен. '
+            'Риски управляемы через EDD: верификация контрагента, подтверждение экономики сделки.'
+        ),
+        'what_good_answer_should_include': [
+            'Различие прямой PEP и PEP-adjacency',
+            'История клиента как mitigating factor',
+            'Управляемость рисков через EDD — не structural blocker',
+            'Challenger View: почему не Reject несмотря на несколько флагов',
+        ],
+        'rationale_gold_standard': (
+            'Несмотря на PEP-adjacency, нестандартную сумму и нового международного контрагента, '
+            'риски являются управляемыми: UBO известен и верифицирован, '
+            '2 года чистой истории с банком, контракт предоставлен. '
+            'PEP-adjacency (племянник, не прямой родственник) требует усиленной проверки, '
+            'но не является автоматическим основанием для отказа. '
+            'EDD позволит верифицировать контрагента и подтвердить экономику сделки. '
+            'Reject был бы избыточным и не обоснованным при данной совокупности фактов.'
+        ),
+        'gold_standard': (
+            'UBO известен, история чистая, PEP-adjacency — не прямой PEP. '
+            'Риски управляемы через EDD. Reject был бы over-reject при данных фактах.'
+        ),
+        'legit_alternative': 'Reject — если EDD не даст удовлетворительных ответов по контрагенту.',
+        'semantic_schema': {
+            'mandatory_ideas': [
+                'UBO известен, 2 года чистой истории — mitigating factors',
+                'PEP-adjacency не равно прямой PEP',
+                'риски управляемы через EDD, это не structural blocker',
+            ],
+            'forbidden_ideas': [
+                'автоматический Reject из-за PEP-adjacency',
+                'нестандартная сумма сама по себе = structural blocker',
+            ],
+            'decisive_factor_mode': 'single_main_thought',
+            'note_expectation': {
+                'max_length_preference': 'short',
+                'challenger_view_required': 'explicit',
+                'tone': ['neutral', 'professional', 'non-accusatory'],
+            },
+        },
+        'signal_expectations': {
+            'mandatory_signals': [
+                'PEP-adjacency (племянник акима) — требует EDD, но не автоматический Reject',
+                'UBO известен, 2 года чистой истории с банком',
+                'нестандартная сумма + новый международный контрагент',
+            ],
+            'optional_signals': ['первый крупный международный контракт — новое для клиента'],
+            'forbidden_signals': ['PEP-adjacency = прямой PEP'],
+        },
+        'expected_output': {
+            'decision_mode':      'edd',
+            'decision':           'Эскалация',
+            'edd_required':       'Да',
+            'cdd_status':         'Incomplete',
+            'risk_level':         'Высокий',
+            'reject_reason_type': 'NONE',
+            'decisive_factor': (
+                'PEP-adjacency + новый международный контрагент + нестандартная сумма — '
+                'управляемые риски при известном UBO и чистой 2-летней истории клиента: EDD, не Reject.'
+            ),
+            'error_type':         'NONE',
+            'confidence_score':   3,
+            'signal_trace': [
+                {'signal': 'Директор — племянник акима (PEP-adjacency, не прямой PEP)',
+                 'category': 'SCREENING', 'impact': 'DECISIVE', 'direction': 'SUPPORTS_ESCALATION', 'comment': ''},
+                {'signal': 'Сумма аккредитива в 8 раз превышает среднемесячный оборот',
+                 'category': 'SOF', 'impact': 'HIGH', 'direction': 'SUPPORTS_ESCALATION', 'comment': ''},
+                {'signal': 'Новый контрагент из Китая без истории операций с клиентом',
+                 'category': 'OTHER', 'impact': 'HIGH', 'direction': 'SUPPORTS_ESCALATION', 'comment': ''},
+                {'signal': '2 года чистой истории с банком, UBO верифицирован',
+                 'category': 'CDD', 'impact': 'HIGH', 'direction': 'MITIGATING', 'comment': ''},
+            ],
+        },
+        'case_data': {
+            'case_id': 'ADV-01', 'case_type': 'Transaction Review',
+            'client_type': 'Юридическое лицо',
+            'client_name': 'ТОО «Meridian Trading»',
+            'registration_country': 'Казахстан',
+            'business_activity': 'Trade Finance / PEP-adjacency / Mixed signals',
+            'beneficial_owner_identified': 'Да',
+            'source_of_funds_summary': 'Собственные средства + кредит казахстанского банка',
+            'supporting_documents_provided': 'Да',
+            'sanctions_result': 'Совпадений нет',
+            'pep_result': 'PEP-adjacent (племянник)',
+            'adverse_media_result': 'Нет',
+            'unresolved_screening_issues': 'PEP-adjacency требует EDD',
+        },
+    },
+]
+
+# Beta whitelist — только эти case_id показываются в beta UI
+BETA_CASE_IDS = ['EASY-01', 'EASY-02', 'MED-01', 'MED-02', 'ADV-01']
+
 
 def get_all_trainer_cases() -> list:
     return TRAINER_CASES

@@ -49,6 +49,38 @@ _D_ICON  = {"beginner": "🟢", "intermediate": "🟡", "advanced": "🔴"}
 _NAV     = {"unfinished_today": "Непройденный сегодня", "sequential": "Подряд", "random": "Случайный"}
 MAX_SIG  = 8
 
+# ── Beta whitelist ────────────────────────────────────────────────────────
+# Временный фильтр для первой beta: показываем только 5 кейсов.
+# Чтобы снять фильтр — установить BETA_MODE = False.
+# Чтобы добавить кейс — добавить case_id в BETA_CASE_IDS.
+BETA_MODE     = True
+BETA_CASE_IDS = {"EASY-01", "EASY-02", "MED-01", "MED-02", "ADV-01"}
+
+
+def _get_beta_next_case(current_case_id: str | None, nav_mode: str) -> dict | None:
+    """
+    Beta-aware wrapper вокруг get_next_trainer_case_by_mode().
+    Если BETA_MODE=True — возвращает только кейсы из BETA_CASE_IDS.
+    Если BETA_MODE=False — работает как обычная навигация.
+    """
+    if not BETA_MODE:
+        return get_next_trainer_case_by_mode(current_case_id, nav_mode)
+
+    # Перебираем пока не найдём beta-кейс (max 20 итераций против бесконечного цикла)
+    seen = set()
+    candidate_id = current_case_id
+    for _ in range(20):
+        candidate = get_next_trainer_case_by_mode(candidate_id, nav_mode)
+        if candidate is None:
+            return None
+        if candidate["case_id"] in BETA_CASE_IDS:
+            return candidate
+        if candidate["case_id"] in seen:
+            return None   # зациклились — нет доступных beta-кейсов
+        seen.add(candidate["case_id"])
+        candidate_id = candidate["case_id"]
+    return None
+
 # ── ИЗМЕНЕНИЕ: добавлен пункт 7 (Challenger View) ────────────────────────
 _NOTE_TEMPLATE = """**Шаблон аналитической записки:**
 
@@ -457,7 +489,7 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
 
     # ── Кнопка следующего ───────────────────────────────────────────────
     nav_en = {v: k for k, v in _NAV.items()}[nav_mode]
-    next_c = get_next_trainer_case_by_mode(case_id, nav_en)
+    next_c = _get_beta_next_case(case_id, nav_en)
     if next_c is None and nav_en == "unfinished_today":
         st.success("✅ На сегодня все кейсы уже пройдены!")
     elif next_c:
@@ -479,6 +511,9 @@ def render_trainer_tab():
     _render_progress()
 
     cases = get_trainer_cases()
+    # Beta filter: показываем только whitelisted кейсы
+    if BETA_MODE:
+        cases = [c for c in cases if c["case_id"] in BETA_CASE_IDS]
     if not cases:
         st.warning("Тренировочные кейсы не найдены.")
         return
@@ -495,7 +530,7 @@ def render_trainer_tab():
         if st.button("⏭️ Следующий кейс"):
             current  = st.session_state.get("trainer_selected_case_id")
             nav_en   = {v: k for k, v in _NAV.items()}[nav_mode]
-            next_c   = get_next_trainer_case_by_mode(current, nav_en)
+            next_c   = _get_beta_next_case(current, nav_en)
             if next_c is None:
                 st.success("✅ На сегодня все кейсы уже пройдены.")
             else:
