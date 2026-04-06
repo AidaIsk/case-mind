@@ -397,6 +397,44 @@ def _render_field_review(review: dict) -> None:
             st.divider()
 
 
+
+# ── Notes Compare Block ───────────────────────────────────────────────────
+
+def _render_notes_compare(review: dict) -> None:
+    """
+    Финальный учебный блок: Твоя записка vs Референсная записка.
+    Показывается после mentor и field review.
+    Если оба поля None — ничего не показывает.
+    """
+    user_note = review.get("user_note")
+    ref_note  = review.get("reference_note")
+
+    if not user_note and not ref_note:
+        return
+
+    st.subheader("📄 Записки")
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.markdown("**Твоя записка**")
+        st.caption("Собрана из твоих ответов выше.")
+        if user_note:
+            st.info(user_note)
+        else:
+            st.caption("_Заполни reasoning blocks чтобы увидеть свою записку._")
+
+    with c2:
+        st.markdown("**Референсная записка**")
+        st.caption("Один из сильных вариантов упаковки этого кейса.")
+        if ref_note:
+            st.success(ref_note)
+        else:
+            st.caption("_Референс недоступен для этого кейса._")
+
+    st.divider()
+
+
 def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_mode: str, run_id: str, case_id: str):
     """Отображает результаты review — краткий или подробный режим."""
     st.divider()
@@ -445,6 +483,9 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
 
     # ── Field-by-field teaching review ──────────────────────────────────
     _render_field_review(review)
+
+    # ── Notes compare: Твоя записка vs Референсная ────────────────────
+    _render_notes_compare(review)
 
     # ── Подробный режим ─────────────────────────────────────────────────
     if review_mode == "Подробный":

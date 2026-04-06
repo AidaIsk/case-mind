@@ -147,6 +147,85 @@ def review_trainer_case(user_output: dict, expected_output: dict) -> dict:
     return evaluate_trainer_answer(user_output, expected_output)
 
 
+def _build_user_note(user_output: dict) -> str:
+    """
+    Детерминированно собирает короткую записку из beta reasoning fields.
+    Без LLM. Работает всегда, даже без API.
+    """
+    dm      = user_output.get("decision_mode", "")
+    cdd     = user_output.get("cdd_status", "")
+    df      = (user_output.get("decisive_factor") or "").strip()
+    facts   = (user_output.get("_beta_key_facts") or "").strip()
+    risk    = (user_output.get("_beta_main_risk") or "").strip()
+    why     = (user_output.get("_beta_risk_reasoning") or "").strip()
+    actions = (user_output.get("_beta_actions") or "").strip()
+    ch      = (user_output.get("_beta_challenger") or "").strip()
+
+    _DM = {"approve": "Одобрить", "edd": "Эскалация (EDD)", "reject": "Отказать"}
+    outcome = _DM.get(dm, dm)
+
+    parts = []
+    if facts:
+        parts.append(f"Установлено: {facts}.")
+    if risk and why:
+        parts.append(f"{risk} — {why}.")
+    elif risk:
+        parts.append(f"Основной риск: {risk}.")
+    if df:
+        parts.append(f"Ключевой фактор: {df}.")
+    if actions:
+        parts.append(f"Действия: {actions}.")
+    parts.append(f"Решение: {outcome}.")
+    if ch:
+        parts.append(f"{ch}.")
+
+    return " ".join(parts) if parts else ""
+
+
+def _build_reference_note(
+    trainer_case: dict,
+    expected_output: dict,
+    mentor_short_ref: str,
+) -> str:
+    """
+    Детерминированно строит референсную записку.
+    Приоритет: mentor short_reference (LLM) → gold_standard → компиляция из expected_output.
+    """
+    # Приоритет 1: если Mentor уже сгенерировал short_reference — используем
+    if mentor_short_ref and len(mentor_short_ref) > 30:
+        return mentor_short_ref
+
+    # Приоритет 2: gold_standard из кейса
+    gold = (
+        trainer_case.get("gold_standard") or
+        trainer_case.get("rationale_gold_standard") or ""
+    ).strip()
+    if gold and len(gold) > 30:
+        # Обрезаем если слишком длинный
+        return gold[:600] + ("…" if len(gold) > 600 else "")
+
+    # Приоритет 3: компиляция из expected_output
+    dm  = expected_output.get("decision_mode", "")
+    df  = (expected_output.get("decisive_factor") or "").strip()
+    cdd = expected_output.get("cdd_status", "")
+    _DM = {"approve": "Одобрить", "edd": "Эскалация (EDD)", "reject": "Отказать"}
+    outcome = _DM.get(dm, dm)
+
+    parts = []
+    decisive_signals = [
+        s["signal"] for s in expected_output.get("signal_trace", [])
+        if s.get("impact") == "DECISIVE"
+    ]
+    if decisive_signals:
+        parts.append(f"Установлено: {decisive_signals[0]}.")
+    if df:
+        parts.append(f"Ключевой фактор: {df}.")
+    parts.append(f"Статус CDD: {cdd}.")
+    parts.append(f"Решение: {outcome}.")
+
+    return " ".join(parts) if parts else ""
+
+
 def submit_trainer_run(
     trainer_case_id: str,
     user_output: dict,
@@ -339,6 +418,20 @@ def submit_trainer_run(
     except Exception:
         pass
     review["field_review"] = field_review
+
+    # ── Note compare layer (teaching, no LLM) ────────────────────────────
+    # user_note: детерминированная сборка из beta reasoning fields
+    # reference_note: mentor short_reference → gold_standard → compiled
+    mentor_short_ref = ""
+    if mentor_output and isinstance(mentor_output, dict):
+        nb = mentor_output.get("note_block", {}) or {}
+        mentor_short_ref = nb.get("short_reference", "") or ""
+
+    user_note_text = _build_user_note(user_output)
+    ref_note_text  = _build_reference_note(trainer_case, expected_output, mentor_short_ref)
+
+    review["user_note"]      = user_note_text if user_note_text else None
+    review["reference_note"] = ref_note_text  if ref_note_text  else None
 
     run_id = save_trainer_run(
         trainer_case_id, user_output, expected_output, review, decision_note
