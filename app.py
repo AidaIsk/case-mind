@@ -12,7 +12,7 @@ st.set_page_config(page_title="CaseMind", layout="wide")
 st.title("CaseMind — Система поддержки решений для KYC/AML")
 st.caption("Прототип системы принятия и объяснения решений для KYC/AML-аналитика")
 
-tab1, tab2, tab3, tab4 = st.tabs(["Новый кейс", "Кейс", "Список кейсов", "Trainer"])
+tab1, tab2, tab3, tab4 = st.tabs(["Новый кейс", "Кейс", "Список кейсов", "Тренажёр"])
 
 with tab1:
     render_new_case_tab()

@@ -473,7 +473,7 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
 # ── Главная вкладка ───────────────────────────────────────────────────────
 
 def render_trainer_tab():
-    st.header("Trainer Mode")
+    st.header("Тренажёр")
     st.caption("Разбери учебный кейс, запиши ответ и аналитическую записку — получи разбор.")
 
     _render_progress()
