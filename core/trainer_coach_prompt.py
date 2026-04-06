@@ -239,7 +239,7 @@ MENTOR_SYSTEM_PROMPT = """
   },
 
   "note_block": {
-    "note_verdict": "strong | acceptable | weak | not_written",
+    "note_verdict": "strong | acceptable | weak | not_written | generated",
     "what_works": "1 предложение: что в записке уже хорошо (или null если не написана)",
     "what_to_tighten": "1 предложение: одна конкретная вещь которую усилить",
     "short_reference": "3-4 предложения: рабочий вариант короткой записки — мышечная память"
@@ -261,7 +261,13 @@ MENTOR_SYSTEM_PROMPT = """
 - если аналитик был близко — улучши, не переписывай полностью
 
 ПРАВИЛА note_block:
-- если записка не заполнена: note_verdict = "not_written", остальные поля = null
+- если записка не заполнена И reasoning blocks пусты:
+    note_verdict = "not_written", what_works = null, what_to_tighten = null, short_reference = null
+- если записка не заполнена НО reasoning blocks есть:
+    note_verdict = "generated"
+    what_works = null, what_to_tighten = null
+    short_reference = ОБЯЗАТЕЛЕН: 3-4 предложения рабочей записки на основе reasoning blocks
+- если записка заполнена: оцени как обычно (strong / acceptable / weak)
 - short_reference: только факты из кейса, нейтральный тон, без обвинений
 
 ПРАВИЛА score_explanation:
@@ -404,8 +410,8 @@ def build_mentor_prompt(
         beta_block,
         "",
         "Сгенерируй mentor response в JSON формате согласно system prompt.",
-        "Если REASONING BLOCKS заполнены — используй их для note_block.short_reference.",
-        "short_reference строй только на фактах из кейса, без домыслов.",
+        "Если REASONING BLOCKS заполнены И записка не написана: note_verdict = generated, short_reference ОБЯЗАТЕЛЕН.",
+        "short_reference строй только на фактах из кейса, нейтральный тон.",
     ]
 
     return "\n".join(lines)

@@ -243,21 +243,30 @@ def _render_mentor_3block(mentor: dict, review: dict) -> None:
     nb = mentor.get("note_block", {})
     if nb:
         note_verdict = nb.get("note_verdict", "not_written")
-        if note_verdict != "not_written":
-            _NV_LABEL = {"strong": "✅ Записка сильная", "acceptable": "🟡 Записка приемлемая",
-                         "weak": "🔴 Записка требует доработки"}
+        if note_verdict == "not_written":
+            st.caption("📝 Записка не была заполнена.")
+        else:
+            _NV_LABEL = {
+                "strong":    "✅ Записка сильная",
+                "acceptable": "🟡 Записка приемлемая",
+                "weak":      "🔴 Записка требует доработки",
+                "generated": "📝 Рабочий вариант записки",
+            }
             label = _NV_LABEL.get(note_verdict, "📝 Записка")
-            with st.expander(f"📝 {label}", expanded=(note_verdict == "weak")):
+            # generated и weak открываем сразу — это главный учебный контент
+            expanded = note_verdict in ("weak", "generated")
+            with st.expander(label, expanded=expanded):
                 if nb.get("what_works"):
                     st.markdown(f"✅ {nb['what_works']}")
                 if nb.get("what_to_tighten"):
                     st.markdown(f"⚠️ {nb['what_to_tighten']}")
                 ref = nb.get("short_reference", "")
                 if ref:
-                    st.markdown("**Рабочий вариант:**")
+                    if note_verdict == "generated":
+                        st.markdown("На основе твоих ответов — рабочий вариант записки:")
+                    else:
+                        st.markdown("**Рабочий вариант:**")
                     st.info(ref)
-        else:
-            st.caption("📝 Записка не была заполнена.")
 
     # ── Score explanation ──────────────────────────────────────────────
     score_exp = mentor.get("score_explanation", "")
@@ -354,10 +363,12 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
             st.markdown("**✅ Что верно:**")
             for item in review.get("what_was_good", []):
                 st.write(f"- {item}")
-        with col_m:
-            st.markdown("**❌ Что пропущено:**")
-            for item in review.get("what_was_missed", []):
-                st.write(f"- {item}")
+        _missed = [x for x in review.get("what_was_missed", []) if x and x.strip() != "—"]
+        if _missed:
+            with col_m:
+                st.markdown("**❌ Что пропущено:**")
+                for item in _missed:
+                    st.write(f"- {item}")
 
         if review.get("what_to_recheck"):
             st.markdown("**🔁 Что перепроверить:**")
