@@ -55,7 +55,7 @@ MAX_SIG  = 8
 # Чтобы добавить кейс — добавить case_id в BETA_CASE_IDS.
 BETA_MODE     = True
 BETA_CASE_IDS = {"EASY-01", "EASY-02", "MED-01", "MED-02", "ADV-01"}
-
+BETA_HIDE_SHARED_ANALYTICS = True
 
 def _get_beta_next_case(current_case_id: str | None, nav_mode: str) -> dict | None:
     """
@@ -538,10 +538,13 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
             st.session_state["trainer_selected_case_id"] = next_c["case_id"]
             st.rerun()
 
+    #st.caption(f"Run ID: `{run_id}`")
+    #st.divider()
+    #_render_history()
     st.caption(f"Run ID: `{run_id}`")
-    st.divider()
-    _render_history()
-
+    if not (BETA_MODE and BETA_HIDE_SHARED_ANALYTICS):
+        st.divider()
+        _render_history()
 
 # ── Главная вкладка ───────────────────────────────────────────────────────
 
@@ -549,7 +552,9 @@ def render_trainer_tab():
     st.header("Тренажёр")
     st.caption("Разбери учебный кейс, запиши ответ и аналитическую записку — получи разбор.")
 
-    _render_progress()
+    #_render_progress()
+    if not (BETA_MODE and BETA_HIDE_SHARED_ANALYTICS):
+        _render_progress()
 
     cases = get_trainer_cases()
     # Beta filter: показываем только whitelisted кейсы
