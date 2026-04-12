@@ -55,7 +55,7 @@ MAX_SIG  = 8
 # Чтобы добавить кейс — добавить case_id в BETA_CASE_IDS.
 BETA_MODE     = True
 BETA_CASE_IDS = {"EASY-01", "EASY-02", "MED-01", "MED-02", "ADV-01"}
-BETA_HIDE_SHARED_ANALYTICS = True
+
 
 def _get_beta_next_case(current_case_id: str | None, nav_mode: str) -> dict | None:
     """
@@ -426,7 +426,7 @@ def _render_notes_compare(review: dict) -> None:
 
     with c2:
         st.markdown("**Референсная записка**")
-        st.caption("Один из сильных вариантов того, как этот кейс можно кратко оформить в рабочей записке.")
+        st.caption("Один из сильных вариантов упаковки этого кейса.")
         if ref_note:
             st.success(ref_note)
         else:
@@ -538,23 +538,86 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
             st.session_state["trainer_selected_case_id"] = next_c["case_id"]
             st.rerun()
 
-    #st.caption(f"Run ID: `{run_id}`")
-    #st.divider()
-    #_render_history()
     st.caption(f"Run ID: `{run_id}`")
-    if not (BETA_MODE and BETA_HIDE_SHARED_ANALYTICS):
-        st.divider()
-        _render_history()
+    st.divider()
+    _render_history()
+
 
 # ── Главная вкладка ───────────────────────────────────────────────────────
+
+
+# ── Trainer Onboarding Block ──────────────────────────────────────────────
+
+def _render_trainer_onboarding() -> None:
+    """
+    Onboarding block в начале вкладки Тренажёр.
+    Отвечает на 4 вопроса: для кого, что тренирует, как пройти, принцип системы.
+    """
+    with st.expander("ℹ️ Как работает этот тренажёр и чему он учит", expanded=True):
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            st.markdown("**Для кого**")
+            st.caption(
+                "Junior и early-middle KYC/AML аналитик, которому нужно научиться "
+                "принимать защищаемые решения по кейсам и грамотно их обосновывать."
+            )
+            st.markdown("**Что тренирует**")
+            st.caption("— Логику решения: Approve / EDD / Reject и почему")
+            st.caption("— Различение закрываемого gap и структурного барьера")
+            st.caption("— Decisive factor: одна главная причина решения")
+            st.caption("— Короткую защищаемую аналитическую записку")
+
+        with col_b:
+            st.markdown("**Как пройти кейс**")
+            st.caption("1. Выберите кейс из списка")
+            st.caption("2. Заполните reasoning blocks — по одному шагу")
+            st.caption("3. Получите mentor review, разбор по полям и референсную записку")
+            st.markdown("**Принцип системы**")
+            st.info("AI helps reasoning, not decision-making.")
+            st.caption(
+                "Система не принимает решение вместо аналитика — "
+                "помогает структурировать логику и увидеть слабые места."
+            )
+
+
+
+
+def _render_trainer_methodology() -> None:
+    """
+    Компактный блок: методологическая база Тренажёра.
+    Сразу виден пользователю — не в expander.
+    """
+    st.markdown("**📚 На чём основана логика**")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.caption(
+            "**Risk-Based Approach** — решение зависит не от одного факта, "
+            "а от совокупности сигналов и их значимости."
+        )
+        st.caption(
+            "**CDD completeness** — если CDD не завершён, решение не может быть "
+            "финальным: требуется EDD или отказ."
+        )
+    with c2:
+        st.caption(
+            "**Closable gap vs structural blocker** — важно различать: "
+            "информацию можно получить (EDD) или её невозможно установить (Reject)."
+        )
+        st.caption(
+            "**Decisive factor + challenger view** — каждое решение опирается "
+            "на одну главную причину и должно выдерживать альтернативную интерпретацию."
+        )
+
 
 def render_trainer_tab():
     st.header("Тренажёр")
     st.caption("Разбери учебный кейс, запиши ответ и аналитическую записку — получи разбор.")
 
-    #_render_progress()
-    if not (BETA_MODE and BETA_HIDE_SHARED_ANALYTICS):
-        _render_progress()
+    _render_trainer_onboarding()
+    _render_trainer_methodology()
+
+    _render_progress()
 
     cases = get_trainer_cases()
     # Beta filter: показываем только whitelisted кейсы
