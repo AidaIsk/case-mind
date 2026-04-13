@@ -402,7 +402,7 @@ def _render_field_review(review: dict) -> None:
 
 def _render_notes_compare(review: dict) -> None:
     """
-    Финальный учебный блок: Твоя записка vs Референсная записка.
+    Финальный учебный блок: черновик из ответов vs референсная записка.
     Показывается после mentor и field review.
     Если оба поля None — ничего не показывает.
     """
@@ -417,16 +417,16 @@ def _render_notes_compare(review: dict) -> None:
     c1, c2 = st.columns(2)
 
     with c1:
-        st.markdown("**Твоя записка**")
-        st.caption("Собрана из твоих ответов выше.")
+        st.markdown("**Черновик на основе твоих ответов**")
+        st.caption("Рабочая сборка на основе твоих reasoning blocks.")
         if user_note:
             st.info(user_note)
         else:
-            st.caption("_Заполни reasoning blocks чтобы увидеть свою записку._")
+            st.caption("_Заполни reasoning blocks чтобы увидеть черновик._")
 
     with c2:
         st.markdown("**Референсная записка**")
-        st.caption("Один из сильных вариантов упаковки этого кейса.")
+        st.caption("Один из сильных рабочих вариантов оформления этого кейса.")
         if ref_note:
             st.success(ref_note)
         else:
