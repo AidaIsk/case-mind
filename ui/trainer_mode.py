@@ -2,6 +2,7 @@
 # combined_summary, краткий/подробный review, шаблон записки,
 # визуальное сравнение score, фильтр "сегодня", empty-states.
 
+import os
 import streamlit as st
 from datetime import date as _date
 
@@ -49,11 +50,12 @@ _D_ICON  = {"beginner": "🟢", "intermediate": "🟡", "advanced": "🔴"}
 _NAV     = {"unfinished_today": "Непройденный сегодня", "sequential": "Подряд", "random": "Случайный"}
 MAX_SIG  = 8
 
-# ── Beta whitelist ────────────────────────────────────────────────────────
-# Временный фильтр для первой beta: показываем только 5 кейсов.
-# Чтобы снять фильтр — установить BETA_MODE = False.
-# Чтобы добавить кейс — добавить case_id в BETA_CASE_IDS.
-BETA_MODE     = True
+# ── Режим приложения ─────────────────────────────────────────────────────
+# CASEMIND_MODE=beta     → только beta-кейсы (для внешних пользователей)
+# CASEMIND_MODE=internal → все кейсы (для внутреннего использования)
+# Переменная не задана   → по умолчанию beta
+APP_MODE      = os.getenv("CASEMIND_MODE", "beta").strip().lower()
+BETA_MODE     = APP_MODE == "beta"
 BETA_CASE_IDS = {"EASY-01", "EASY-02", "MED-01", "MED-02", "ADV-01"}
 
 
