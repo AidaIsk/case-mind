@@ -6,6 +6,7 @@ from ui.new_case import render_new_case_tab
 from ui.case_view import render_case_view_tab
 from ui.case_list import render_case_list_tab
 from ui.trainer_mode import render_trainer_tab
+from ui.typologies_mode import render_typologies_tab
 
 st.set_page_config(page_title="CaseMind", layout="wide")
 
@@ -17,14 +18,16 @@ st.caption("Прототип системы принятия и объяснен
 BETA_FIRST_TAB = True
 
 if BETA_FIRST_TAB:
-    tab1, tab2, tab3, tab4 = st.tabs(["Тренажёр", "Новый кейс", "Кейс", "Список кейсов"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Тренажёр", "Типологии", "Новый кейс", "Кейс", "Список кейсов"])
     with tab1: render_trainer_tab()
-    with tab2: render_new_case_tab()
-    with tab3: render_case_view_tab()
-    with tab4: render_case_list_tab()
+    with tab2: render_typologies_tab()
+    with tab3: render_new_case_tab()
+    with tab4: render_case_view_tab()
+    with tab5: render_case_list_tab()
 else:
-    tab1, tab2, tab3, tab4 = st.tabs(["Новый кейс", "Кейс", "Список кейсов", "Тренажёр"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Новый кейс", "Кейс", "Список кейсов", "Тренажёр", "Типологии"])
     with tab1: render_new_case_tab()
     with tab2: render_case_view_tab()
     with tab3: render_case_list_tab()
     with tab4: render_trainer_tab()
+    with tab5: render_typologies_tab()
