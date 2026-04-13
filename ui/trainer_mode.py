@@ -551,33 +551,31 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
 def _render_trainer_onboarding() -> None:
     """
     Onboarding block в начале вкладки Тренажёр.
-    Отвечает на 4 вопроса: для кого, что тренирует, как пройти, принцип системы.
+    Компактная 2-колонка: для кого / что тренирует / как пройти / принцип.
     """
     with st.expander("ℹ️ Как работает этот тренажёр и чему он учит", expanded=True):
         col_a, col_b = st.columns(2)
 
         with col_a:
-            st.markdown("**Для кого**")
-            st.caption(
-                "Junior и early-middle KYC/AML аналитик, которому нужно научиться "
-                "принимать защищаемые решения по кейсам и грамотно их обосновывать."
+            st.markdown(
+                "**Для кого:** junior и early-middle KYC/AML аналитик, "
+                "которому нужно принимать защищаемые решения по кейсам.  \n\n"
+                "**Что тренирует:**  \n"
+                "— логику Approve / EDD / Reject  \n"
+                "— различение closable gap и structural blocker  \n"
+                "— decisive factor: одна главная причина  \n"
+                "— короткую защищаемую аналитическую записку"
             )
-            st.markdown("**Что тренирует**")
-            st.caption("— Логику решения: Approve / EDD / Reject и почему")
-            st.caption("— Различение закрываемого gap и структурного барьера")
-            st.caption("— Decisive factor: одна главная причина решения")
-            st.caption("— Короткую защищаемую аналитическую записку")
 
         with col_b:
-            st.markdown("**Как пройти кейс**")
-            st.caption("1. Выберите кейс из списка")
-            st.caption("2. Заполните reasoning blocks — по одному шагу")
-            st.caption("3. Получите mentor review, разбор по полям и референсную записку")
-            st.markdown("**Принцип системы**")
-            st.info("AI helps reasoning, not decision-making.")
-            st.caption(
-                "Система не принимает решение вместо аналитика — "
-                "помогает структурировать логику и увидеть слабые места."
+            st.markdown(
+                "**Как пройти:**  \n"
+                "1. Выберите кейс  \n"
+                "2. Заполните reasoning blocks  \n"
+                "3. Получите mentor review и референсную записку  \n\n"
+                "**Принцип:** AI helps reasoning, not decision-making.  \n"
+                "Система помогает структурировать логику — "
+                "решение остаётся за аналитиком."
             )
 
 
@@ -585,29 +583,27 @@ def _render_trainer_onboarding() -> None:
 
 def _render_trainer_methodology() -> None:
     """
-    Компактный блок: методологическая база Тренажёра.
-    Сразу виден пользователю — не в expander.
+    Методологическая база: 4 опоры логики решений.
+    Виден сразу, без expander. Оформлен через st.info для заметности.
     """
-    st.markdown("**📚 На чём основана логика**")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.caption(
-            "**Risk-Based Approach** — решение зависит не от одного факта, "
-            "а от совокупности сигналов и их значимости."
-        )
-        st.caption(
-            "**CDD completeness** — если CDD не завершён, решение не может быть "
-            "финальным: требуется EDD или отказ."
-        )
-    with c2:
-        st.caption(
-            "**Closable gap vs structural blocker** — важно различать: "
-            "информацию можно получить (EDD) или её невозможно установить (Reject)."
-        )
-        st.caption(
-            "**Decisive factor + challenger view** — каждое решение опирается "
-            "на одну главную причину и должно выдерживать альтернативную интерпретацию."
-        )
+    with st.container():
+        st.markdown("**📚 На чём основана логика решений**")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.info(
+                "**Risk-Based Approach** — решение строится на совокупности "
+                "сигналов и их значимости, а не на одном факте.  \n\n"
+                "**CDD completeness** — незавершённый CDD блокирует "
+                "финальное решение: нужен EDD или отказ."
+            )
+        with c2:
+            st.info(
+                "**Closable gap vs structural blocker** — "
+                "информацию можно получить через EDD, "
+                "или её невозможно установить — тогда Reject.  \n\n"
+                "**Decisive factor + challenger view** — одна главная причина "
+                "решения, которая выдерживает альтернативную интерпретацию."
+            )
 
 
 def render_trainer_tab():
@@ -616,6 +612,7 @@ def render_trainer_tab():
 
     _render_trainer_onboarding()
     _render_trainer_methodology()
+    st.divider()
 
     _render_progress()
 
