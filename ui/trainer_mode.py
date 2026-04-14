@@ -437,6 +437,116 @@ def _render_notes_compare(review: dict) -> None:
     st.divider()
 
 
+
+# ---------------------------------------------------------------------------
+# Typology hint layer — мягкая связь кейсов с вкладкой "Типологии"
+# ---------------------------------------------------------------------------
+# Маппинг ключевых слов scenario_type → обучающая подсказка.
+# Детерминированный, без LLM. Не влияет на score и mentor.
+
+_TYPOLOGY_HINTS: list[dict] = [
+    {
+        "keywords": ["tbml", "trade-based", "trade / cash"],
+        "typology": "Trade-Based Money Laundering (TBML)",
+        "typology_id": "T-004",
+        "phase": "Layering 🟠",
+        "why_it_matters": (
+            "TBML использует торговые документы как инструмент сокрытия. "
+            "Ключевой навык: отличить рыночное отклонение цены от манипуляции."
+        ),
+    },
+    {
+        "keywords": ["shell", "оболочек", "shell structure", "shell / cdd"],
+        "typology": "Компании-оболочки (Shell Companies)",
+        "typology_id": "T-003",
+        "phase": "Integration 🟢",
+        "why_it_matters": (
+            "Оболочечная структура создаёт видимый легальный слой. "
+            "Без раскрытия UBO CDD не может быть завершён — это structural blocker."
+        ),
+    },
+    {
+        "keywords": ["transit", "транзит", "third party payment"],
+        "typology": "Транзитные счета / транзитная схема",
+        "typology_id": "T-002",
+        "phase": "Layering 🟠",
+        "why_it_matters": (
+            "Транзит скрывает след через промежуточные счета. "
+            "Наличие договора не объясняет экономический смысл маршрута платежа."
+        ),
+    },
+    {
+        "keywords": ["cash-out", "cash / approve", "cash"],
+        "typology": "Cash-Intensive Business",
+        "typology_id": "T-005",
+        "phase": "Placement 🔴",
+        "why_it_matters": (
+            "Легальный статус cash-intensive бизнеса не делает объём наличных обоснованным. "
+            "Важна пропорциональность оборота масштабу бизнеса."
+        ),
+    },
+    {
+        "keywords": ["nominee", "ubo change", "mining / nominee"],
+        "typology": "Компании-оболочки / номинальные структуры",
+        "typology_id": "T-003",
+        "phase": "Integration 🟢",
+        "why_it_matters": (
+            "Номинальный директор или смена UBO — признак намеренного сокрытия бенефициара. "
+            "Проверь, можно ли установить реального владельца."
+        ),
+    },
+    {
+        "keywords": ["round-trip", "capital flight", "service-based ml", "consulting"],
+        "typology": "Транзитные схемы / расслоение",
+        "typology_id": "T-002",
+        "phase": "Layering 🟠",
+        "why_it_matters": (
+            "Сервисные платежи и round-trip — частый инструмент расслоения. "
+            "Ключевой вопрос: есть ли реальная услуга за платежом?"
+        ),
+    },
+]
+
+
+def _get_typology_hint(trainer_case: dict) -> dict | None:
+    """
+    Возвращает typology hint для кейса на основе scenario_type.
+    Ищет первое совпадение по ключевым словам — без LLM, детерминированно.
+    Если совпадений нет — возвращает None (блок не показывается).
+    """
+    scenario = (trainer_case.get("scenario_type") or "").lower()
+    if not scenario:
+        return None
+    for hint in _TYPOLOGY_HINTS:
+        if any(kw in scenario for kw in hint["keywords"]):
+            return hint
+    return None
+
+
+def _render_typology_hint(trainer_case: dict) -> None:
+    """
+    Маленький explanatory блок: на какую typology похож кейс.
+    Показывается перед кнопкой "Следующий кейс".
+    Не влияет на score, mentor или deterministic verdict.
+    """
+    hint = _get_typology_hint(trainer_case)
+    if not hint:
+        return
+
+    with st.expander("🔗 Связь с типологиями AML", expanded=False):
+        st.caption(
+            "Этот кейс затрагивает схему, описанную во вкладке «Типологии». "
+            "Разбор не влияет на оценку — это обучающий контекст."
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"**Типология:** {hint['typology']}")
+            st.markdown(f"**AML Phase:** {hint['phase']}")
+        with c2:
+            st.markdown("**Почему это важно**")
+            st.caption(hint["why_it_matters"])
+
+
 def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_mode: str, run_id: str, case_id: str):
     """Отображает результаты review — краткий или подробный режим."""
     st.divider()
@@ -529,6 +639,9 @@ def _render_review(review: dict, expected_output: dict, trainer_case: dict, nav_
             st.write(f"**Ключевой фактор:** {exp.get('decisive_factor', '—')}")
             for sig in exp.get("signal_trace", []):
                 st.write(f"- [{sig['impact']}] {sig['signal']}")
+
+    # ── Typology hint — explanatory link to Типологии tab ─────────────
+    _render_typology_hint(trainer_case)
 
     # ── Кнопка следующего ───────────────────────────────────────────────
     nav_en = {v: k for k, v in _NAV.items()}[nav_mode]
